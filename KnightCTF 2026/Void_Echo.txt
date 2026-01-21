@@ -1,0 +1,31 @@
+===============================================================================
+KnightCTF 2026 - Void Echo Writeup
+Category: Forensics
+Points: 0
+Author: pmsiam0
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Introductory forensic scenario. The prompt explicitly states that User3's
+password is the flag and provides all user passwords in the description.
+
+FILES PROVIDED:
+--------------
+- (Not required for this part)
+
+SOLUTION:
+---------
+
+1. READ THE PROMPT CAREFULLY
+   
+   The challenge states: "User3's password is the flag for this challenge."
+   The list of passwords includes:
+   
+   User3: ksacademy3321
+
+2. SUBMIT THE FLAG
+   
+   Apply the required format: KCTF{ksacademy3321}
+
+FLAG: KCTF{ksacademy3321}
