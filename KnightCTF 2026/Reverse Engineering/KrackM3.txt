@@ -1,0 +1,70 @@
+===============================================================================
+KnightCTF 2026 - KrackM3 Writeup
+Category: Reverse Engineering
+Points: 150
+Author: NomanProdhan
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Krackme... Flag Format : KCTF{flag}
+
+FILES PROVIDED:
+--------------
+- KrackM3.ks
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+   
+   Opened the binary and the disassembly listing to locate the input check.
+   This narrowed the analysis to the real validation routine.
+
+2. BASIC INPUT RULES
+   
+   The code enforces:
+   - Exact length of 32 characters
+   - Required format prefix "KCTF{...}"
+   - Multiple success messages, but only one is the real flag path
+
+3. RECREATE INTERNAL BUFFERS
+   
+   The program builds internal buffers using a deterministic shuffle:
+   - xorshift RNG
+   - Fisher-Yates shuffle
+   
+   Reproducing these buffers (buf1/buf2) is required to match the checks.
+
+4. UNDERSTAND THE MAIN LOOP
+   
+   The validation loop runs once per input byte. Each iteration:
+   - Updates state registers (r8/r9)
+   - Mutates a 16-byte key schedule
+   - Compares a computed value against static tables
+
+5. FIX THE MODEL
+   
+   While reimplementing the logic in Python, a mismatch appeared.
+   The root cause was a wrong buffer index source (buf3 vs key byte).
+   Correcting that aligned the model with the binary.
+
+6. SOLVE THE FLAG SEQUENTIALLY
+   
+   With a correct model, solve each byte from left to right:
+   - Choose the byte that satisfies the table constraint for this index
+   - Update state exactly like the binary
+   - Continue to the next byte
+
+7. VERIFY
+   
+   Ran the binary with the recovered flag.
+   The program prints the real success message only for the correct flag.
+
+TOOLS USED:
+-----------
+- strings / disassembly listing
+- Python (solver script)
+- gdb (spot checks against live registers)
+
+FLAG: KCTF{_R3_iS_FuNR1gHT?_EnjOy_r3_}

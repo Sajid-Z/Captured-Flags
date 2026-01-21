@@ -1,0 +1,61 @@
+===============================================================================
+KnightCTF 2026 - Knight Squad Academy Jail 2 Writeup
+Category: Pwn / Jail
+Points: 230
+Author: NomanProdhan
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+"in the world of Knight Squad Academy jail only a knight can help you!"
+Flag Format: KCTF{flag_here}
+Connection: nc 66.228.49.41 41567
+
+SOLUTION:
+---------
+
+1. CONNECT AND PROFILE THE JAIL
+   
+   The service rejects most inputs with generic errors. This indicates a
+   strict parser with a blacklist and a small function surface.
+
+2. FIND THE KEY FUNCTION
+   
+   The input string "knight" is blacklisted, but the hint implies a
+   knight-related function exists. Using a fullwidth Unicode character
+   bypasses the raw substring filter:
+   
+   - Use "ｋnight(...)" (fullwidth ｋ) to call the function.
+
+3. UNDERSTAND THE FEEDBACK
+   
+   The function returns two integers for a 30-character guess:
+   - First number: correct characters in correct positions
+   - Second number: correct characters in wrong positions
+   
+   This is Mastermind-style feedback.
+
+4. DETERMINE LENGTH AND CHARACTER COUNTS
+   
+   By testing lengths, the valid guess length is 30 characters.
+   Repeating a single character 30 times reveals that character's count
+   in the flag. Summing counts across the charset gives the full multiset.
+
+5. RECOVER POSITIONS
+   
+   With counts known, a group-testing approach places characters:
+   - Fix known prefix/suffix (KCTF{ and })
+   - Use a filler character not in the flag
+   - Split remaining positions and query for each character
+   - Recursively assign positions based on returned correct-position counts
+
+6. VERIFY
+   
+   The reconstructed flag satisfies all oracle checks and matches the
+   expected format.
+
+TOOLS USED:
+-----------
+- netcat / Python socket script
+
+FLAG: KCTF{_aNOtHER_JAIL_Y0U_bRoKE_}

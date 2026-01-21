@@ -1,0 +1,44 @@
+===============================================================================
+KnightCTF 2026 - Knight Squad Academy Jail Writeup
+Category: Pwn / Jail
+Points: 100
+Author: NomanProdhan
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+"I don't like words but I love chars."
+Flag Format: KCTF{flag}
+Connection: nc 66.228.49.41 1337
+
+SOLUTION:
+---------
+
+1. CONNECT AND OBSERVE
+   
+   Connected to the service and tested basic inputs. The evaluator accepts
+   numbers and simple operators, but rejects identifiers and most function
+   names. This indicates a strict AST-based jail with a tiny whitelist.
+
+2. DISCOVER THE WHITELISTED FUNCTIONS
+   
+   Probing revealed three usable single-letter functions:
+   - L()  : returns the flag length
+   - Q(i, x): compares a character at index i with x (returns -1, 0, or 1)
+   - S(str): checks a full flag string and returns success/failure
+
+3. USE THE ORACLE TO RECOVER CHARACTERS
+   
+   L() returned 28, giving the flag length.
+   Q(i, x) behaves like a comparison oracle, so each character can be
+   recovered by binary searching ASCII values until Q(i, x) == 0.
+
+4. VERIFY THE FLAG
+   
+   Once all characters were recovered, S(flag) confirmed correctness.
+
+TOOLS USED:
+-----------
+- netcat / Python socket script
+
+FLAG: KCTF{_n_o_w_o_r_d_s_c_h_a_r}

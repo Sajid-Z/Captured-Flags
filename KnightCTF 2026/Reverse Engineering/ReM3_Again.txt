@@ -1,0 +1,62 @@
+===============================================================================
+KnightCTF 2026 - ReM3 Again Writeup
+Category: Reverse Engineering
+Points: 150
+Author: NomanProdhan
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Reverse me again if you can...
+Flag Format : KCTF{flag}
+
+FILES PROVIDED:
+--------------
+- rem3_again.ks
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+   
+   Inspected the binary to locate the validation logic and identify key
+   functions. Strings and disassembly showed custom routines named p, z,
+   cat3, t, eq, and chk_first.
+
+2. FIND FLAG LENGTH AND FORMAT
+   
+   The main check enforces a fixed length of 38 bytes and standard flag
+   braces. Multiple constant tables suggest multiple candidate flags, but
+   only one is real.
+
+3. IDENTIFY CONSTANT TABLES
+   
+   The .rodata section contains byte arrays (x_d*, x_r*) used as inputs.
+   These are combined by cat3 into a 38-byte buffer, then transformed by
+   the t routine.
+
+4. UNDERSTAND p AND t
+   
+   - p builds a permutation using a Fisher-Yates shuffle seeded by a
+     xorshift RNG. The inverse permutation is used later.
+   - t applies a per-byte transformation using 32-bit arithmetic, shifts,
+     and XORs. It updates internal state each iteration.
+
+5. REIMPLEMENT THE LOGIC
+   
+   Recreated cat3, p, and t in Python with exact 8-bit/32-bit masking and
+   zero-extension. Extracted the constant tables directly from the binary
+   and applied the same transformations to recover the correct output.
+
+6. VERIFY
+   
+   The recovered flag is printable and matches the program checks when
+   tested against the binary.
+
+TOOLS USED:
+-----------
+- strings
+- objdump / readelf
+- Python (solver script)
+
+FLAG: KCTF{aN0Th3r_r3_I_h0PE_y0U_eNj0YED_IT}
