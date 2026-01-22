@@ -1,4 +1,4 @@
-# ADMIN DASHBOARD
+# ADMIN Panel
 
 ## Description
 Login and get the flag.
