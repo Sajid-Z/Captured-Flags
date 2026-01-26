@@ -1,0 +1,70 @@
+===============================================================================
+BUETCTF - Forensics 6 Writeup
+Category: Forensics
+Points: 387
+Author: abdullah
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+“A process named .gHive was recently executed on the system but it is no longer
+present on the disk. Can you recover its secret?”
+Flag format: buetctf{s0meth1ng_h3r3}
+
+FILES PROVIDED:
+--------------
+- Server_13.1.5.zip (same VM image used in previous tasks)
+
+SOLUTION:
+---------
+
+1. UNDERSTAND THE CLUE
+   The process .gHive is gone from disk, so the secret likely survives in
+   unallocated space (deleted file content) or leftover script fragments.
+
+2. SEARCH UNALLOCATED SPACE
+   Dump unallocated blocks and scan for strings:
+
+   - blkls -o 4096 Server13_clean.raw | strings -a -n 6 | grep -i gHive
+
+   This reveals deleted script fragments mentioning .gHive and a flag.
+
+3. IDENTIFY THE BLOCKS WITH THE FLAG
+   The flag appears in multiple unallocated blocks, including:
+   - 327580
+   - 327582
+   - 3736117
+   - 3736596
+   - 5223322
+   - 5223323
+   - 5223324
+   - 5223327
+   - 5223331
+   - 5223348
+
+   Example confirmation from block 327580:
+   - blkcat -o 4096 Server13_clean.raw 327580 | strings -a
+   Output includes:
+   “# FLAG: buetctf{M3m0ry_F0r3ns1cs_R3v3als_All}”
+
+   Other blocks show the script creating `/tmp/.gHive`, executing it, and
+   deleting it afterward, which matches the challenge description.
+
+4. FINAL FLAG
+   The recovered secret is:
+   buetctf{M3m0ry_F0r3ns1cs_R3v3als_All}
+
+FLAG:
+-----
+buetctf{M3m0ry_F0r3ns1cs_R3v3als_All}
+
+TOOLS USED:
+-----------
+- Sleuth Kit: blkls, blkcat
+- strings
+
+NOTES:
+------
+The attacker executed the payload from /tmp and deleted it immediately.
+Because the file was removed, the only trace is in unallocated blocks.
+This is a classic example of disk forensics recovering deleted artifacts.

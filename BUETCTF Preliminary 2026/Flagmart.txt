@@ -1,0 +1,70 @@
+===============================================================================
+BUETCTF 2026 - Flagmart Writeup
+Category: Android
+Points: 500
+Author: Maruf Bin Murtuza (marufmurtuza)
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+A digital marketplace for flags!
+Flag format: buetctf{correct_flag}
+
+FILES PROVIDED:
+--------------
+- Flagmart.apk
+
+SOLUTION:
+---------
+
+1. DECOMPILE THE APK
+   Used jadx/apktool to inspect the app code and locate the backend API.
+   In RetrofitClient (smali/java), the base URL is hardcoded:
+   http://178.128.102.122:7200/
+
+2. ENUMERATE API ENDPOINTS
+   From the API interface classes, these endpoints exist:
+   - /register
+   - /login
+   - /profile
+   - /flags
+   - /buy_flag
+   - /redeem_promo
+   - /transfer
+
+3. REGISTER + LOGIN
+   Register a new user and login to get an auth token.
+   The token is just a base64-encoded numeric ID.
+
+4. FIND THE PROMO CODE
+   Since tokens are base64 of IDs, try admin ID = 1:
+   base64(1) = MQ==
+   Requesting /profile with Authorization: MQ== reveals a promo code:
+   Fl4gm4r7_5p3c14l_Pr0m0_F0r_1337_H4ck3r5
+
+5. UNLOCK THE SPECIAL FLAG
+   Use /redeem_promo with your own token and the promo code.
+   This unlocks the special flag in /flags, but it costs 13371337.
+
+6. EXPLOIT NEGATIVE TRANSFER
+   The /transfer endpoint allows negative amounts.
+   Transfer a negative amount to another account to increase your balance.
+
+7. BUY THE SPECIAL FLAG
+   After inflating the balance, buy the special flag via /buy_flag.
+   The response returns an image: flag_special.png
+
+8. DECODE THE IMAGE
+   Open the image and read the printed flag text.
+   (OCR/manual read both work.)
+
+FLAG:
+-----
+buetctf{BCF_26_Flagmart_Sp3cial_Fl4g_f0r_5pecially_5kill3d_hackerz}
+
+TOOLS USED:
+-----------
+- jadx / apktool
+- curl / Python requests
+- base64
+- image viewer / OCR

@@ -1,0 +1,123 @@
+===============================================================================
+BUET CTF 2026 - AltCtrl Writeup
+Category: Reverse Engineering
+Points: 500
+Author: imt1az
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Your genius little brother has made a puzzle for you to solve.
+"It is extremely easy", he says. "Just move in the direction I tell you".
+But you know that there will be a catch. There is always a catch.
+
+Flag format: buetctf{flag}
+
+FILES PROVIDED:
+--------------
+- altctrl
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   - `file` shows a 64‑bit PIE ELF, stripped.
+   - `checksec` shows NX + Canary + PIE (so classic buffer overflow is unlikely).
+   - `strings` shows:
+     - "Invalid key pressed"
+     - "You shall not pass"
+     - "buetctf{????????????????????????????????????}"
+   - Running the binary shows the placeholder flag and accepts 1 key at a time.
+
+   So it’s not a memory corruption task; it’s a logic puzzle hidden in the binary.
+
+2. UNDERSTAND INPUT HANDLING
+
+   The function around `read()`:
+
+   - Disables terminal canonical mode (`tcgetattr`, modifies flags, `tcsetattr`).
+   - Reads exactly **one byte** from stdin.
+   - Restores the terminal mode.
+
+   That explains why you can’t “type normally”: it expects single keypresses,
+   and it doesn’t echo them.
+
+3. FIND THE MAIN LOOP
+
+   In `.text` (around `0x10b0`), the program:
+
+   - Prints the placeholder flag.
+   - Enters a loop of **36 iterations**.
+   - Each iteration:
+     - Reads one key.
+     - Checks it against a small 4‑character “direction string”.
+     - Updates a position `(x, y)` in a maze.
+     - Validates the new cell is not a wall (`#`).
+     - If valid, writes the pressed key into the flag buffer.
+
+   If the key is not one of the 4 allowed keys → "Invalid key pressed"
+   If the move hits a wall → "You shall not pass"
+
+4. EXTRACT STATIC DATA
+
+   The binary stores in `.data`:
+
+   - **Maze blocks**: each maze is 30×30 ASCII, total 36 mazes.
+   - **Direction strings**: 36 entries, each 4 chars (e.g. `thgf`, `hmnb`, `wdsa`).
+   - **Initial position**: `x = 15`, `y = 15`.
+
+   The maze rows are contiguous in memory and separated by lines of `#`
+   between mazes.
+
+5. MAP KEYS TO MOVES
+
+   The code checks the 4 chars of each string in **fixed order**:
+
+   index 0 → move up    (y - 1)
+   index 1 → move right (x + 1)
+   index 2 → move down  (y + 1)
+   index 3 → move left  (x - 1)
+
+   So for a string like `thgf`:
+   - `t` means up
+   - `h` means right
+   - `g` means down
+   - `f` means left
+
+6. SOLVE THE PATH (KEY IDEA)
+
+   For each step (0–35):
+
+   - You know the current `(x, y)` and the current maze.
+   - Test the four possible moves.
+   - Only one move lands on a non‑`#` cell.
+   - That move’s key is the correct input for that step.
+   - Update `(x, y)` and continue.
+
+   This is deterministic and yields exactly one valid key at each step.
+
+7. RECOVER THE FLAG
+
+   Simulating all 36 steps produces:
+
+   thisflagwasextremelyannoyingtoobtain
+
+   Final flag:
+
+   buetctf{thisflagwasextremelyannoyingtoobtain}
+
+TOOLS USED:
+-----------
+- strings / radare2 (to locate loop and data)
+- Python (to simulate the maze steps and recover the key sequence)
+
+FLAG:
+-----
+buetctf{thisflagwasextremelyannoyingtoobtain}
+
+NOTES FOR CLARITY:
+------------------
+- The program never asks for a full line — it reads single keypresses.
+- The 4‑character strings are NOT the flag; they are *allowed keys* for each step.
+- The real flag is built by collecting the correct key from each step.

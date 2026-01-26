@@ -1,0 +1,60 @@
+===============================================================================
+BUETCTF - Forensics 5 Writeup
+Category: Forensics
+Points: 300
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+“Find out the username of the threat actor?”
+Flag format: buetctf{Username}
+
+FILES PROVIDED:
+--------------
+- Server_13.1.5.zip (same VM image used in previous tasks)
+
+SOLUTION:
+---------
+
+1. LOOK FOR HIDDEN/LEFTOVER ARTIFACTS
+   The earlier tasks show the attacker created extra artifacts and deleted
+   evidence. I searched the filesystem for unusual files outside /var/www.
+
+   Using Sleuth Kit on the raw image:
+   - fls -o 4096 Server13_clean.raw 655361
+
+   This reveals a file in /opt:
+   /opt/finance_disk.img
+   (inode 655375)
+
+2. EXTRACT THE DISK IMAGE
+   The file is an embedded ext4 filesystem. Extract it:
+   - icat -o 4096 Server13_clean.raw 655375 > /tmp/finance_disk.img
+
+3. CHECK FOR DELETED CONTENT
+   Listing the filesystem shows no normal files, so the evidence is likely
+   in unallocated space. Dump unallocated blocks and search strings:
+   - blkls /tmp/finance_disk.img | strings -a -n 4
+
+   This immediately shows:
+   “Rem!4l was here”
+
+4. IDENTIFY THE THREAT ACTOR USERNAME
+   The attacker left a clear signature. The username is:
+   Rem!4l
+
+FLAG:
+-----
+buetctf{Rem!4l}
+
+TOOLS USED:
+-----------
+- Sleuth Kit: fls, icat, blkls
+- strings
+
+NOTES:
+------
+The finance disk image is a decoy storage that contains only deleted data.
+The threat actor’s username is recovered from unallocated space, which is
+why normal file listing does not show it.
+Also while finding the flag, we got some decoy flags that were wrong.

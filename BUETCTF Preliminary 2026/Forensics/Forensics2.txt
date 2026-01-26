@@ -1,0 +1,71 @@
+===============================================================================
+BUETCTF - Forensics 2 Writeup
+Category: Forensics
+Points: 300
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+“Recover the secret embedded in outbound web requests.”
+Flag format: buetctf{s0meth1ng_h3r3}
+
+FILES PROVIDED:
+--------------
+- Server_13.1.5.zip
+
+SOLUTION:
+---------
+
+1. EXTRACT THE VM DISK
+   The zip contains a VirtualBox VM. The main disk is:
+   - Server13_clean.vdi
+   We already converted this VDI to a raw disk image in Forensics 1
+   to allow Sleuth Kit tools to read it.
+
+2. FIND THE LINUX PARTITION OFFSET
+   Use mmls on the raw disk to locate the main partition:
+   - Linux filesystem starts at sector 4096
+
+3. LOCATE WEB SERVER LOGS
+   Since the clue mentions “outbound web requests”, the Apache access logs
+   are the best place to look.
+
+   Using fls with the filesystem offset:
+   - /var/log/apache2/access.log
+   - /var/log/apache2/access.log.1
+
+   The interesting entries were in access.log.1.
+
+4. EXTRACT AND SEARCH THE LOG
+   Use icat to extract the log file, then search for suspicious requests:
+
+   Example pattern in the log:
+   GET /api/sync?token=... HTTP/1.1
+
+   The value of token is base64-encoded.
+
+5. DECODE THE TOKEN VALUES
+   One of the requests contains:
+
+   token=ZmxhZzogYnVldGN0ZnszeGYxbHRyNHQzZF9zM2NyM3RzX3YxNF9sMGdzfQ==
+
+   Base64 decoding gives:
+   flag: buetctf{3xf1ltr4t3d_s3cr3ts_v14_l0gs}
+
+6. CONCLUDE
+   The secret is directly embedded in the outbound web request token.
+
+FLAG:
+-----
+buetctf{3xf1ltr4t3d_s3cr3ts_v14_l0gs}
+
+TOOLS USED:
+-----------
+- 7z (extract VM)
+- Sleuth Kit: mmls, fls, icat
+- grep / base64 (to filter and decode)
+
+NOTES:
+------
+This challenge is about spotting exfiltration via web requests and decoding
+its payload. The key evidence is in the Apache access log.

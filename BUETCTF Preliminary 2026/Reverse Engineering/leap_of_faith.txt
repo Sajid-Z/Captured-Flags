@@ -1,0 +1,107 @@
+===============================================================================
+BUET CTF 2025 - Leap Of Faith Writeup
+Category: Reverse Engineering
+Points: 300
+Author: imt1az
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Sometimes you gotta take a leap of faith. And sometimes leap of faith is gotta take you!
+
+Flag format: buetctf{correct_flag}
+
+FILES PROVIDED:
+--------------
+- leap_of_faith
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Basic checks (file, strings) show:
+   - 64-bit PIE ELF, dynamically linked, not stripped
+   - Messages: "Flag please:", "Now you C me!", "Are you sure?"
+   - Many long symbol names starting with 'g' and digits
+   - Functions: dlopen, dlsym, signal, and a global magic_number
+
+   This hints the program transforms input into a symbol name and calls it.
+
+2. MAIN FLOW (HIGH LEVEL)
+
+   Disassembly of main shows:
+   - Registers a SIGSEGV handler (prints the "random guesses" message and exits)
+   - dlopen(NULL, RTLD_LAZY) to open its own symbol table
+   - Reads input with scanf("%99s", buf)
+   - Calls simple_crypt(input, &out)
+   - Uses dlsym(handle, out) to resolve a function by name
+   - Calls that function pointer
+   - Checks magic_number & 0x4:
+     - If set -> prints "Now you C me!"
+     - Else -> prints "Are you sure?"
+
+   If dlsym fails (invalid name), the call crashes -> SIGSEGV handler prints the hint.
+   So we must provide an input that maps to a real function inside the binary.
+
+3. WHAT THE "g... FUNCTIONS" DO
+
+   Each of the g<digits> functions is tiny: it only sets magic_number to a constant, then returns.
+   Therefore, the right answer is the one whose function sets magic_number with bit 2 set.
+
+4. REVERSE simple_crypt (ENCODING)
+
+   The function builds this alphabet:
+
+   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+
+   For each input character c:
+
+   - x = c - 0x20
+   - q = x / 10, r = x % 10
+   - out[2*i]   = alphabet[52 + q]  -> digit '0'..'9'
+   - out[2*i+1] = alphabet[52 + r]  -> digit '0'..'9'
+
+   After the loop, it adds 0x31 to out[0].
+   This shifts the first digit:
+
+   '0'..'9'  ->  'a'..'j'
+
+   So the encrypted name looks like:
+   [a..j][digits...]
+   which matches the g6856... style symbols in the binary.
+
+5. INVERT THE ENCODING
+
+   To reverse a symbol name back into the input:
+
+   - Convert the first letter back to a digit by subtracting 0x31
+   - Read two digits at a time -> value 00..99
+   - original_char = value + 0x20
+
+   This gives the original input string.
+
+6. FIND THE CORRECT FLAG
+
+   Strategy:
+   - Decode all g<digits> symbols into readable strings.
+   - Filter those that match buetctf{...}.
+   - For each candidate, check its function's constant:
+     - Only the one with (constant & 0x4) != 0 prints "Now you C me!"
+
+   There is exactly one such candidate.
+
+7. VERIFY
+
+   Run the binary with the recovered flag:
+
+   printf '%s\n' 'buetctf{wh0_mad3_th1s_rubb15h_ch4l1eng3}' | ./leap_of_faith
+
+   Output: Now you C me!
+
+TOOLS USED:
+-----------
+- strings / objdump / nm
+- Python (small decoder & filter)
+
+FLAG: buetctf{wh0_mad3_th1s_rubb15h_ch4l1eng3}

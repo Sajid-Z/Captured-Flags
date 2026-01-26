@@ -1,0 +1,93 @@
+===============================================================================
+BUET CTF 2026 - Wannalaugh Writeup
+Category: Reverse Engineering / Forensics
+Points: 694
+Author: Maruf Bin Murtuza (marufmurtuza)
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Wannalaugh sounds familiar, but it doesn’t play by familiar rules. What you
+expect to trigger may actually prevent the outcome. Pay attention to absence
+as much as presence. Sometimes, things work best when they don’t exist.
+
+Flag format: buetctf{...}
+
+FILES PROVIDED:
+--------------
+- Wannalaugh.exe
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   The file is a Windows PE executable:
+   - `file Wannalaugh.exe` shows it’s a 64-bit Windows GUI binary.
+   - Running `strings` reveals it’s UPX-packed (strings like “UPX0/UPX1”).
+
+   Because packed binaries hide real strings and logic, the first step is
+   unpacking.
+
+2. UNPACK THE BINARY (UPX)
+
+   Use UPX to unpack:
+   - `upx -d Wannalaugh.exe -o Wannalaugh_unpacked.exe`
+
+   Now we can inspect actual strings and resources.
+
+3. FIND INTERESTING STRINGS
+
+   Running strings on the unpacked binary shows:
+   - `fanged.png`
+   - `defanged.png`
+   - “Your PC has been infected with Wannalaugh!”
+   - “No flag for you”
+   - “Congratulations! … Check your Desktop Wallpaper for your reward!”
+
+   The hint about “absence” suggests **defanged** (no teeth) is more important
+   than **fanged**.
+
+4. INSPECT EMBEDDED RESOURCES
+
+   PE files often store extra data in the resource section. Listing resources
+   (with tools like `rabin2 -U` or any PE viewer) shows two large RCDATA entries:
+   - DEFANGED_PENG (≈1.9 MB)
+   - FANGED_PENG (≈1.9 MB)
+
+   These map directly to `defanged.png` and `fanged.png`.
+
+5. EXTRACT THE IMAGES
+
+   One way is using radare2 to dump the resources by address/size. Another is
+   any PE resource extractor. After extraction you get:
+
+   - `defanged.png`
+   - `fanged.png`
+
+6. READ THE FLAG (THE “ABSENCE” HINT)
+
+   Open `defanged.png` in any image viewer.
+   The flag is visually present in the wallpaper image.
+
+   This matches the clue:
+   - “absence as much as presence” → the **defanged** image contains the flag
+     (the “non-dangerous” one), not the “fanged” one.
+
+FLAG:
+-----
+buetctf{wannalaugh_50unds_lik3_the_0ppo5it3_0f_wannacry_so_as_its_50lution}
+
+TOOLS USED:
+-----------
+- file / strings
+- UPX
+- PE resource extraction (e.g., rabin2/r2, PE viewer, or any extractor)
+- Image viewer
+
+NOTES / TAKEAWAYS:
+------------------
+- Packed binaries often hide critical strings; unpacking is essential.
+- Challenge hints mattered: “absence” pointed directly to “defanged”.
+- The flag was not computed through a complex exploit; it was embedded
+  as a visual element inside a resource.

@@ -1,0 +1,52 @@
+===============================================================================
+BUETCTF - Forensics 4 Writeup
+Category: Forensics
+Points: 295
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+“The attacker modified the timestamp of the web shell file. Find out its last
+modification date.”
+Flag format: buetctf{yyyy-mm-dd}
+
+FILES PROVIDED:
+--------------
+- Server_13.1.5.zip (same VM image used in previous tasks)
+
+SOLUTION:
+---------
+
+1. IDENTIFY THE WEB SHELL FILE
+   From Forensics 1, the web shell is:
+   /var/www/html/fileuploads/receipts/niceT.gif.php
+   (located in the web uploads directory and containing PHP code)
+
+2. GET THE INODE FOR THE FILE
+   Using Sleuth Kit tools on the raw disk image:
+   - fls lists the receipts directory
+   - inode for niceT.gif.php is 1335509
+
+3. READ TIMESTAMPS
+   Use istat on the inode to view MACB times:
+   - “File Modified” is the important one for last modification time
+
+   Output shows:
+   File Modified: 2026-01-18 06:00:00 (+06)
+
+4. EXTRACT THE DATE
+   The flag format only needs the date, so we use:
+   2026-01-18
+
+FLAG:
+-----
+buetctf{2026-01-18}
+
+TOOLS USED:
+-----------
+- Sleuth Kit: fls, istat
+
+NOTES:
+------
+The attacker timestomped the web shell. The authoritative value is the
+“File Modified” timestamp in the inode metadata.

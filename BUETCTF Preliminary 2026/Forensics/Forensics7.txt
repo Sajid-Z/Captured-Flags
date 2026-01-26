@@ -1,0 +1,63 @@
+===============================================================================
+BUETCTF 2026 - Forensics 7 Writeup
+Category: Forensics
+Points: 250
+Author: Unknown
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+The attacker tried to implement a backdoor on the system. Determine the
+malicious file name and the IP address of the attacker's C2 server.
+
+Flag format: buetctf{file-name_IP}
+
+FILES PROVIDED:
+--------------
+- Forensics/Server_13.1.5/Server13_clean.raw
+
+SOLUTION:
+---------
+
+1. IDENTIFY THE PARTITION
+
+   Used mmls to find the Linux partition start. The Ext4 filesystem
+   begins at sector offset 4096.
+
+2. CONFIRM FILESYSTEM
+
+   Verified Ext4 details and mount metadata with fsstat.
+
+3. ENUMERATE FOR PERSISTENCE
+
+   Recursively listed files and filtered for common persistence paths
+   (systemd/cron). A suspicious user-level unit appeared at:
+   /var/www/.config/systemd/user/systemd-resolve.service
+
+4. INSPECT THE SERVICE
+
+   The unit file runs:
+   ExecStart=/var/www/.local/share/systemd-resolve
+   User=www-data
+   This indicates a hidden backdoor binary placed in web directories.
+
+5. EXTRACT THE BINARY
+
+   Pulled /var/www/.local/share/systemd-resolve with icat for analysis.
+
+6. EXTRACT C2 IP
+
+   strings revealed a hardcoded C2 IP inside the binary:
+   118.148.18.139
+
+7. CONFIRM MALICIOUS FILE NAME
+
+   The malicious file name is systemd-resolve.
+   (A duplicate copy also existed under uploads as "bin2" with the same hash.)
+
+TOOLS USED:
+-----------
+- mmls, fsstat, fls, icat
+- strings, rg
+
+FLAG: buetctf{systemd-resolve_118.148.18.139}

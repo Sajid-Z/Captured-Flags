@@ -1,0 +1,53 @@
+===============================================================================
+BUETCTF - Forensics 3 Writeup
+Category: Forensics
+Points: 399
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+“Find the comment string embedded in the unauthorized access setup.”
+Flag format: buetctf{s0meth1ng_h3r3}
+
+FILES PROVIDED:
+--------------
+- Server_13.1.5.zip (same VM image as previous Forensics tasks)
+
+SOLUTION:
+---------
+
+1. START FROM THE “UNAUTHORIZED ACCESS” CLUE
+   In Linux, an unauthorized access setup often means an SSH backdoor.
+   The most common persistent method is adding a public key into:
+   /root/.ssh/authorized_keys
+
+2. LOCATE ROOT’S SSH DIRECTORY IN THE DISK IMAGE
+   Using Sleuth Kit tools (fls/icat) on the raw disk image:
+   - /root/.ssh/authorized_keys exists
+
+3. READ THE AUTHORIZED KEYS FILE
+   Extract the file with icat. The line inside looks like:
+
+   ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGWHAojtcg9j9Bx0FqPBtlIyUtyUPlazKqYutwJ4LfDR apt-update-service@ubuntu
+
+   In SSH, the third field is the *comment* string. This is exactly
+   what the challenge is asking for.
+
+4. EXTRACT THE COMMENT STRING
+   The comment field is:
+   apt-update-service@ubuntu
+
+FLAG:
+-----
+buetctf{apt-update-service@ubuntu}
+
+TOOLS USED:
+-----------
+- 7z (extract VM)
+- Sleuth Kit: fls, icat
+- awk (to isolate the comment field)
+
+NOTES:
+------
+The unauthorized access setup is the planted SSH key. The “comment” is part
+of the SSH public key line, and it is the required answer.
