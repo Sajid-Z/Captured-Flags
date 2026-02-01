@@ -1,0 +1,83 @@
+===============================================================================
+BUET CTF 2026 - LangLang Writeup
+Category: Reverse Engineering
+Points: 700
+Author: imt1az
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Listen closely. Abstractions lie. Beneath the polish, it’s all just 0s and 1s.
+Tear away the layers. Break the illusion. Reach the metal underneath.
+Can you see what the machine really is?
+
+Flag format: buetctf{flag}
+
+FILES PROVIDED:
+--------------
+- Challenge.class
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   - `file Challenge.class` shows a Java class (version 67 / Java 21).
+   - `javap -c -p Challenge` reveals two key routines:
+     - `verify()` (timing check)
+     - `rebuild()` (reconstructs a hidden binary from base64 chunks)
+
+2. UNDERSTAND THE JAVA WRAPPER
+
+   The `main()` method does this:
+
+   - Runs `verify()` and exits if it fails.
+   - Calls `rebuild()` to obtain raw bytes.
+   - Writes those bytes to a temp file, marks it executable.
+   - Executes it with one argument: your input.
+
+   So the real logic is inside a hidden native binary.
+
+3. REBUILD THE HIDDEN BINARY
+
+   `rebuild()` contains an array of 20 base64 strings. The method:
+
+   - Decodes each base64 string and concatenates them.
+   - Interprets the result as hex pairs -> bytes.
+   - XORs each byte with (0x7b ^ index).
+
+   Reimplementing those steps yields an ELF binary.
+
+4. ANALYZE THE ELF
+
+   - `file` on the rebuilt bytes shows a 64-bit PIE ELF, stripped.
+   - Running it prints usage and accepts exactly one argument.
+
+   Disassembly (`objdump -d`) reveals:
+
+   - Input length must be 0x2a (42 bytes).
+   - A 42-byte buffer in `.data` is XOR-obfuscated with 0x42.
+   - The input is compared via `memcmp` to the deobfuscated buffer.
+
+5. EXTRACT THE FLAG
+
+   The obfuscated bytes live at `.data` + 0x20 (address 0x4060) and
+   are exactly 42 bytes long. XORing each byte with 0x42 yields:
+
+   buetctf{l0w_l3v3l_15_wh3r3_7h3_m0n3y_l135}
+
+TOOLS USED:
+-----------
+- javap (to inspect bytecode)
+- Python (to reassemble the ELF and decode the flag)
+- objdump / readelf (to locate the obfuscated data)
+
+FLAG:
+-----
+buetctf{l0w_l3v3l_15_wh3r3_7h3_m0n3y_l135}
+
+NOTES FOR CLARITY:
+------------------
+- The Java class is only a loader. The real challenge is the native ELF.
+- The verification step is a timing check and can be bypassed offline.
+- The XOR key for the flag buffer is a simple constant: 0x42.

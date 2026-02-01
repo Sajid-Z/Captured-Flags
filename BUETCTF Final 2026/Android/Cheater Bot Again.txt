@@ -1,0 +1,87 @@
+===============================================================================
+BUET CTF 2026 - Cheater Bot Again Writeup
+Category: Reverse Engineering
+Points: 700
+Author: Maruf Bin Murtuza
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Remember the cheater bot from BUET CTF 2024? Here it comes again in a
+ different form!
+
+Flag format: buetctf{fl4g}
+
+FILES PROVIDED:
+--------------
+- Cheater_Bot_Again.apk
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   - `file` identifies the input as an Android APK.
+   - Unzip shows two dex files (classes.dex, classes2.dex).
+
+2. DECOMPILE / DISASSEMBLE
+
+   Use apktool to decode resources and smali:
+
+   - `apktool d -f -o /tmp/cheater_bot_again_apktool Cheater_Bot_Again.apk`
+
+   Search for strings related to the flag or crypto:
+
+   - `rg -n "flag|AES|decrypt" /tmp/cheater_bot_again_apktool/smali_classes2`
+
+   The hit is in:
+
+   - `/tmp/cheater_bot_again_apktool/smali_classes2/com/buetctf/cheaterbotagain/MainActivityKt.smali`
+
+3. LOCATE THE FLAG LOGIC
+
+   Inside `MainActivityKt.smali` there is a function:
+
+   - `decryptFlag()`
+
+   This function:
+   - Base64-decodes a ciphertext string.
+   - Builds an AES key from a hex string.
+   - Builds an IV from another hex string.
+   - Decrypts with `AES/CBC/PKCS5Padding`.
+
+   The values extracted from smali:
+
+   - Ciphertext (Base64):
+     dOJRhxzk9JdAEvKj4jeooOUW48X476yBasKn4+JPAPSOcRhge/Ze8g5Za9eBJ8pnaisd4C0tYf9e7TFdcifbVWhb2tA5QXAxemmJOkjSK6NbDArZluNeV2wSiCk1e103
+   - Key (hex):
+     494caf62fe275ea551aac0c373c1495b03df8fe213b58b9a00b367050c95c1b9
+   - IV (hex):
+     dc1fc428fc692d8f52ec46d0359f9bc4
+
+4. DECRYPT
+
+   Because the ciphertext is Base64, decode and decrypt with OpenSSL:
+
+   - `printf '%s' '<ciphertext>' | openssl enc -aes-256-cbc -d -a -A \
+       -K 494caf62fe275ea551aac0c373c1495b03df8fe213b58b9a00b367050c95c1b9 \
+       -iv dc1fc428fc692d8f52ec46d0359f9bc4`
+
+   Output is the flag.
+
+FLAG:
+-----
+buetctf{c0n60_b0tzzz_c4n_n3v3r_b3_5mart3r_th4n_5mart_p30pl3z_l3t_al0n3_5mart_h4ck3rzzzzz}
+
+TOOLS USED:
+-----------
+- apktool (decode APK to smali)
+- ripgrep (locate crypto/flag logic)
+- openssl (AES decryption)
+
+NOTES FOR CLARITY:
+------------------
+- The game UI is a distraction; the flag is statically encrypted and
+  decrypted in code.
+- The key and IV are provided directly in smali, so no dynamic analysis
+  is required.

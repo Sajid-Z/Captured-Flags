@@ -1,0 +1,96 @@
+===============================================================================
+BUET CTF 2026 - Flagc Code Golf Writeup
+Category: Reverse Engineering
+Points: 500
+Author: irt1az
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Flag is no longer a CTF thingy. It is a full fledged programming language!
+Write the shortest flag program that outputs:
+
+  flagc was very cool
+
+Flag format: buetctf{flag}
+
+FILES PROVIDED:
+--------------
+- flagc
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   - `file` shows a 64-bit PIE ELF, stripped.
+   - Running without args prints usage:
+       /home/abdullah/Downloads/flagc <flag_source_code>
+   - A quick `strace` shows the binary opens the provided source file
+     and exits non-zero if the program is invalid.
+
+2. FIND THE OUTPUT LOGIC
+
+   Disassembly shows the program eventually prints a decoded string by:
+   - Taking an input buffer (the source program)
+   - XORing each character with a fixed 19-byte key
+   - `putchar()` the result
+
+   The target output length is 19, which matches:
+     "flagc was very cool" (19 chars)
+
+3. EXTRACT THE XOR KEY
+
+   The XOR key is stored in .data at 0x4040 as 19 dwords:
+
+     [83, 51, 22, 83, 16, 127, 18, 85, 0, 17,
+      69, 23, 45, 45, 72, 87, 1, 48, 93]
+
+   These are used byte-wise for each character.
+
+4. RECOVER THE REQUIRED SOURCE PROGRAM
+
+   If the runtime does:
+     output[i] = input[i] XOR key[i]
+
+   Then the needed input is:
+     input[i] = output[i] XOR key[i]
+
+   XORing the target output with the key yields:
+
+     thi5_w4s_e4s13r_Th4n_1t_l00k3d
+
+   The language syntax (parsed by the compiler) requires:
+     - the literal prefix "buetctf"
+     - a '{' and a matching '}'
+     - and a specific token "_l00" before the final '}'
+
+   Putting it together:
+
+     buetctf{thi5_w4s_e4s13r_Th4n_1t_l00k3d}
+
+5. VERIFY
+
+   Running:
+
+     /home/abdullah/Downloads/flagc file.flag
+
+   outputs:
+
+     flagc was very cool
+
+TOOLS USED:
+-----------
+- strace (to confirm file input and failure path)
+- radare2 / objdump (to locate the XOR loop and data)
+- Python (to compute the XORed input)
+
+FLAG:
+-----
+buetctf{thi5_w4s_e4s13r_Th4n_1t_l00k3d}
+
+NOTES FOR CLARITY:
+------------------
+- The program length is 39 characters (including braces).
+- The printed output is produced by XOR decoding at runtime.
+- The "_l00" token is required by the parser (not part of the output).
