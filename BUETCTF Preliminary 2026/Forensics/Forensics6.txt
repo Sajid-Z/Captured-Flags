@@ -2,7 +2,6 @@
 BUETCTF - Forensics 6 Writeup
 Category: Forensics
 Points: 387
-Author: abdullah
 ===============================================================================
 
 CHALLENGE DESCRIPTION:
