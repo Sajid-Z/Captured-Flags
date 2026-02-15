@@ -1,0 +1,74 @@
+===============================================================================
+0xfun CTF - What you have Writeup
+Category: Pwn
+Points: 100
+Author: x03e
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Bring it on! Show me EVERYTHING you've got! I want to see all you've got!
+
+FILES PROVIDED:
+--------------
+- chall
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+   
+   Started with basic ELF triage:
+   - `file chall` -> 64-bit dynamically linked ELF
+   - `checksec` -> No PIE, No RELRO, NX enabled, Canary found
+   - `nm/objdump/strings` -> important function `win()` exists
+
+2. FIND THE VULNERABLE LOGIC
+   
+   `main()` reads two unsigned long values using `scanf("%lu", ...)`:
+   - First input is treated as a pointer/address
+   - Second input is treated as a value
+   - Then the program performs: `*(uint64_t *)addr = value`
+
+   This is an arbitrary 8-byte write primitive.
+
+3. IDENTIFY THE WIN PATH
+   
+   `win()` opens `flag.txt`, reads bytes, and prints:
+   - `I like what you GOT! Take this: %s.`
+
+   So the exploit objective is just to redirect control flow into `win()`.
+
+4. CHOOSE A RELIABLE TARGET
+   
+   Because binary is:
+   - non-PIE (fixed code addresses)
+   - no RELRO (GOT writable)
+
+   Best target is a GOT overwrite:
+   - Overwrite `puts@GOT` (0x403430) with `win` (0x401236)
+
+5. TRIGGER EXECUTION
+   
+   After the arbitrary write, `main()` calls `puts("Goodbye!")`.
+   With GOT poisoned, that call becomes `win()`.
+
+   Inputs required (`%lu`, decimal):
+   - Address: `0x403430` -> `4207664`
+   - Value:   `0x401236` -> `4198966`
+
+   One-liner:
+   - `printf '4207664\n4198966\n' | nc chall.0xfun.org 26401`
+
+6. VERIFY
+   
+   Running the payload prints the flag from remote service.
+
+TOOLS USED:
+-----------
+- `file`, `checksec`
+- `nm`, `objdump`, `strings`
+- `nc`
+- Python (optional exploit automation)
+
+FLAG: 0xfun{g3tt1ng_schw1fty_w1th_g0t_0v3rwr1t3s_1384311_m4x1m4l}

@@ -1,0 +1,77 @@
+===============================================================================
+KnightCTF 2026 - Dots Writeup
+Category: Forensics
+Points: 105
+Author: x03e
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Unusual dots scatter across the page, sparking a whirlwind of ideas.
+Perhaps a pattern to decode, a secret message to uncover, or a design to bring
+to life.
+
+FILES PROVIDED:
+--------------
+- dots.wav
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+   
+   Started with basic file inspection:
+   - `file dots.wav`
+   - `ffprobe dots.wav`
+   
+   This confirmed it is mono PCM WAV audio (44.1 kHz), around 111 seconds.
+
+2. IDENTIFY THE SIGNAL TYPE
+   
+   Generated and inspected a spectrogram. The tone structure and sync pattern
+   matched SSTV behavior rather than normal voice/music audio.
+   
+   Key hint: short control tones followed by line-based encoded image data.
+
+3. DECODE THE AUDIO AS SSTV
+   
+   Decoded `dots.wav` with an SSTV decoder, which detected:
+   - Mode: Scottie 1
+   
+   This produced an image containing a dense field of black dots on a light
+   background.
+
+4. ANALYZE THE DECODED IMAGE
+   
+   The decoded frame did not contain readable text directly.
+   Dot positions formed a structured matrix (not random noise), suggesting a
+   machine-readable 2D symbology.
+
+5. NORMALIZE THE DOT PATTERN
+   
+   Extracted dot centroids and projected them onto a regular lattice.
+   The pattern dimensions aligned to a grid suitable for DotCode-like decoding.
+   
+   After trying orientation/spacing variants, one normalized render matched the
+   expected DotCode geometry.
+
+6. DECODE THE DOTCODE PAYLOAD
+   
+   Used a DotCode-capable barcode engine on the normalized image.
+   Successful decode returned:
+   
+   `0xfun{d07_c0d3_k1nd4_d1ff3r3n7_45_175_4_w31rd_qr_7yp3}`
+
+7. VERIFY
+   
+   Re-ran decode on a regenerated normalized image and obtained the same output,
+   confirming the flag.
+
+TOOLS USED:
+-----------
+- `file`, `ffprobe`, `ffmpeg`
+- Python (`numpy`, `scipy`, `Pillow`)
+- SSTV decoder (`sstv`, Scottie 1)
+- DotCode decoder (`dynamsoft_barcode_reader_bundle`)
+
+FLAG: 0xfun{d07_c0d3_k1nd4_d1ff3r3n7_45_175_4_w31rd_qr_7yp3}

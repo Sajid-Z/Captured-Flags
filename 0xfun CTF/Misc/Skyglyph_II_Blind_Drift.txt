@@ -1,0 +1,88 @@
+===============================================================================
+0xFun CTF - Skyglyph II: Blind Drift Writeup
+Category: Misc
+Points: 730
+Author: Abdullah
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+No more hand-holding. 4 noisy star-detection frames are provided with a full
+catalog. Only frame1 has a rough pointing seed. Plate-solve every frame,
+recover exact star IDs, derive per-frame keys, and decrypt each flag part.
+Any wrong ID causes AEAD authentication failure.
+
+FILES PROVIDED:
+--------------
+- frame1.csv ... frame4.csv
+- catalog.csv
+- seed.json
+- crypto.txt
+- cipher1.bin ... cipher4.bin
+- nonce1.bin ... nonce4.bin
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+   
+   Read README/crypto files first. The key detail is strict:
+   - Keep matches with mag < 6.0 and sigma_px < 1.2
+   - Sort by detection flux descending
+   - Take first 64 star_id values
+   - SHA256(u32-le bytes) => ChaCha20-Poly1305 key
+   
+   So plate-solving must be exact enough for top-64 IDs.
+
+2. DATA PROFILING
+   
+   Quick stats showed:
+   - ~8.5k detections/frame
+   - ~2.1k detections/frame after sigma_px < 1.2 filter
+   - Catalog is local sky patch (RA ~283..297, Dec ~28..42)
+   
+   This confirmed the solve can be done with local geometric matching.
+
+3. FRAME1 BOOTSTRAP
+   
+   Used the frame1 seed to build tangent-plane catalog coordinates.
+   Then used triangle-hash geometric alignment on bright subsets.
+   Candidate mappings were validated by attempting AEAD decryption for frame1.
+   The correct match instantly revealed:
+   - PART 1/4: 0xfun{w0w_Y0u_
+
+4. FRAME2/FRAME3 RECOVERY
+   
+   Reused the same center/model family and matching pipeline:
+   - Solve transform on bright stars
+   - Assign detections to nearest projected catalog stars
+   - Apply dedupe policy (closest detection per star)
+   - Build 64-ID key list and test AEAD
+   
+   This recovered:
+   - PART 2/4: 4R3_G0oD_4t_
+   - PART 3/4: Th1s_ST4r_
+
+5. FRAME4 HARD CASE
+   
+   Frame4 was the noisiest under the same parameters.
+   Final fix:
+   - Match using an offset detection slice (top flux window shifted by +10)
+   - Keep nearest-star dedupe and threshold sweep
+   - Validate each candidate by AEAD
+   
+   Correct solve returned:
+   - PART 4/4: Th1N9}
+
+6. ASSEMBLE FLAG
+   
+   Concatenate parts in order 1 -> 4.
+
+TOOLS USED:
+-----------
+- Python 3
+- scipy (KD-tree nearest-neighbor checks)
+- cryptography (ChaCha20-Poly1305 verification)
+- twirl/triangle hashing for geometric star-pattern matching
+
+FLAG: 0xfun{w0w_Y0u_4R3_G0oD_4t_Th1s_ST4r_Th1N9}

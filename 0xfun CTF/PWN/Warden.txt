@@ -1,0 +1,109 @@
+===============================================================================
+0xfun CTF 2026 - Warden Writeup
+Category: PWN
+Points: 500
+Author: SwitchCaseAdvocate
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+The Warden watches every syscall. But who watches the Warden?
+Suffering ends in 30 minutes.
+nc chall.0xfun.org 40964
+
+FILES PROVIDED:
+--------------
+- warden (ELF 64-bit, PIE, x86-64)
+- warden.c (source for the seccomp supervisor)
+- jail.py (Python sandbox executed under the warden)
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Three files: a C supervisor (warden.c), a Python jail (jail.py),
+   and the compiled binary. The setup forks a child that installs a
+   seccomp user-notification filter, then exec's jail.py under it.
+   The parent receives the notification fd and supervises every
+   intercepted syscall.
+
+2. UNDERSTAND THE PYTHON JAIL
+
+   jail.py accepts user code up to 8192 bytes. Before execution:
+   - AST is parsed and validated
+   - import, global, nonlocal, async nodes are forbidden
+   - Attribute access starting with underscore is forbidden
+   - String literals containing "__" are forbidden
+   - Dangerous builtins (eval, exec, open, etc.) are removed
+   - Only a whitelist of SAFE_BUILTINS is exposed
+
+3. UNDERSTAND THE SECCOMP WARDEN
+
+   The BPF filter sends these syscalls to SECCOMP_RET_USER_NOTIF:
+   - openat, open (path checked against blocklist)
+   - mmap, mprotect (allowed via CONTINUE)
+   - execve, execveat (allowed once, then denied)
+   - networking syscalls (all denied)
+   - ptrace, prctl, seccomp, process_vm_* (all denied)
+   - memfd_create, userfaultfd, mount (all denied)
+
+   The openat/open handler reads the path string from tracee memory
+   via process_vm_readv and checks it against BLOCKED_PATHS:
+   /flag, /root, /etc/shadow, /etc/gshadow, /proc/self/mem,
+   /proc/self/exe, /proc/self/root.
+
+   The check uses strncmp with the length of the blocked prefix.
+
+4. ESCAPE THE PYTHON JAIL
+
+   The jail blocks underscore-prefixed attributes in the AST and
+   "__" in string literals. However, getattr() is in the whitelist
+   and chr() is available. Building the dunder prefix at runtime
+   bypasses both checks:
+
+       u = chr(95) * 2           # "__" built at runtime, not a literal
+
+   With this, traverse the MRO:
+   - object.__subclasses__()  →  list all loaded classes
+   - Find a class whose __init__.__globals__ contains 'os'
+   - Extract the os module from those globals
+
+   This gives full os module access without import or open().
+
+5. BYPASS THE WARDEN PATH CHECK (TOCTOU / PATH TRAVERSAL)
+
+   The warden reads the path from tracee memory and does:
+       strncmp(path, "/flag", 5)
+
+   This blocks any path starting with "/flag". But the check does
+   NOT canonicalize or resolve the path. The kernel does.
+
+   Opening "/dev/../flag.txt" passes the warden's check because
+   it starts with "/dev", not "/flag". But the kernel resolves
+   the ".." components and opens /flag.txt on disk.
+
+   This is a classic TOCTOU / path traversal bypass.
+
+6. FULL EXPLOIT CHAIN
+
+   The payload sent to the jail:
+   a) Build "__" via chr(95)*2
+   b) Walk object.__subclasses__() to find os module
+   c) os.listdir('/dev/..') to confirm flag.txt exists at /
+   d) os.open('/dev/../flag.txt', 0) to open past the warden
+   e) os.read(fd, 8192) to read the flag
+   f) print() the result
+
+7. VERIFY
+
+   Connected to chall.0xfun.org:40964, sent the payload.
+   Server printed the flag.
+
+TOOLS USED:
+-----------
+- pwntools (remote connection)
+- Python (exploit payload)
+- Source code review (warden.c, jail.py)
+
+FLAG: 0xfun{wh0_w4tch3s_th3_w4rd3n_t0ctou_r4c3}

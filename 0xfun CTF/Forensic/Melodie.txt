@@ -1,0 +1,101 @@
+===============================================================================
+0xfun CTF 2026 - Melodie Writeup
+Category: Forensics
+Points: 720
+Difficulty: Hard
+Author: x03e
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+A kid taps out 1337 drums, thinking it's nothing more than a noisy rhythm.
+Observers notice the pattern matches a strange signal they've been monitoring
+for weeks. What began as play suddenly becomes the key to a mystery none of
+them expected.
+
+Flag Format: 0xfun{}
+
+FILES PROVIDED:
+--------------
+- files.zip -> Drums.zip -> Drums/Melodie.wav
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Extracted the nested ZIP archives:
+   - files.zip contained Drums.zip
+   - Drums.zip contained Drums/Melodie.wav
+
+   File analysis:
+   - RIFF WAV audio, Microsoft PCM, 16 bit, mono, 44100 Hz
+   - Duration: ~111 seconds (4,910,241 samples)
+   - No trailing data after the WAV data chunk
+   - No extra files embedded (binwalk/foremost found nothing)
+
+2. SSTV DECODING (RED HERRING)
+
+   Frequency analysis revealed tones in the 1100-2400 Hz range, consistent
+   with Slow Scan Television (SSTV) signals. Decoded with the sstv Python
+   module:
+
+     python -m sstv -d Drums/Melodie.wav -o sstv_output.png
+
+   Result: Scottie S1 mode image (320x256 px) containing the text:
+
+     "SEEMS LIKE A DEADEND"
+
+   This was a deliberate decoy to waste time on further SSTV/spectrogram
+   analysis.
+
+3. STEGANOGRAPHY ANALYSIS
+
+   With the SSTV layer confirmed as a dead end, attention turned to data
+   hidden within the audio samples themselves.
+
+   Checks performed:
+   - steghide: No valid passphrase found (also confirmed via stegseek
+     seed scan — no steghide payload present)
+   - Single-bit LSB extraction: No readable data at any bit position
+   - Spectrogram visual analysis: No hidden text in any frequency band
+   - Phase analysis: No PSK encoding detected
+   - Amplitude envelope: Constant (~23075 RMS), no binary modulation
+
+4. 2-BIT LSB STEGANOGRAPHY (THE FLAG)
+
+   Using stego-lsb (WavSteg), data was recovered from the 2 least
+   significant bits of each audio sample:
+
+     from stego_lsb.WavSteg import recover_data
+     recover_data('Drums/Melodie.wav', 'output.txt', num_lsb=2, bytes_to_recover=1000)
+
+   The first 35 bytes of recovered data contained the flag in plaintext,
+   followed by a CRLF and random padding bytes.
+
+5. VERIFY
+
+   Confirmed the flag format matches 0xfun{...} and contains a valid
+   32-character hex string (MD5-style hash).
+
+TOOLS USED:
+-----------
+- unzip (archive extraction)
+- exiftool / file (metadata inspection)
+- sstv Python module (SSTV decoding)
+- stegseek (steghide brute-force / seed scan)
+- binwalk / foremost (file carving)
+- scipy, numpy (frequency analysis)
+- stego-lsb / WavSteg (WAV LSB steganography)
+- pytesseract (OCR on decoded SSTV image)
+
+KEY TAKEAWAY:
+-------------
+The challenge layered a visible SSTV signal on top of LSB-hidden data.
+The SSTV decode explicitly says "SEEMS LIKE A DEADEND" to misdirect.
+The real flag is embedded in the 2 least significant bits of the PCM
+audio samples using standard WAV LSB steganography. The "1337 drums"
+hint in the description refers to the SSTV signal structure (1337
+frequency segments), not the steganographic payload.
+
+FLAG: 0xfun{8f2b5c9d4f6a1eab3e0c4df52b79d8c1}

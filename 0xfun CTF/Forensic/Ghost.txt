@@ -1,0 +1,244 @@
+===============================================================================
+0xfun CTF 2026 - Ghost / Ghost Reloaded Writeup
+Category: Forensic
+Points: 440 (Ghost Reloaded, medium)  |  740 (Ghost, hard - deprecated)
+Author: x03e
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+The interception of a transmission has occurred, with only a network capture
+remaining. Recover the flag before the trail goes cold.
+
+Note: "Ghost Reloaded" is the cleaned-up version of "Ghost". The setters
+acknowledged too much ambiguity in the original and released a simplified
+version. The core artifacts and solution path remain the same.
+
+FILES PROVIDED:
+--------------
+- help.eml              (Ghost - original)
+- wallpaper.png         (Ghost Reloaded - simplified)
+
+FLAG FORMAT: 0xfun{}
+
+===============================================================================
+SOLUTION (GHOST RELOADED - SIMPLIFIED)
+===============================================================================
+
+1. INITIAL RECONNAISSANCE
+
+   wallpaper.png is a 320x256 RGB PNG (61 KB). Running exiftool reveals:
+      Warning: [minor] Trailer data after PNG IEND chunk
+   This immediately signals hidden data appended after the image.
+
+2. EXTRACT TRAILING DATA
+
+   Located the PNG IEND marker (49 45 4E 44 AE 42 60 82) at offset 61208.
+   235 bytes of trailing data follow. The first bytes are:
+      37 7A BC AF 27 1C
+   This is the magic signature for a 7-Zip archive.
+
+   Listing the archive with `7z l trailing_data.bin`:
+      Method: LZMA2:12 7zAES   (password-protected)
+      Contents: fishwithwater/nothing.txt (27 bytes)
+
+3. OBTAIN THE PASSWORD
+
+   The password comes from earlier work on the original "Ghost" challenge.
+   Via SSTV decoding and steganography (detailed below), the string
+   `1n73rc3p7_c0nf1rm3d` was recovered as a key passphrase.
+
+   Extraction:
+      7z x -p"1n73rc3p7_c0nf1rm3d" trailing_data.bin
+
+4. READ THE FLAG
+
+   fishwithwater/nothing.txt contains:
+      0xfun{l4y3r_pr0t3c710n_k3y}
+
+===============================================================================
+SOLUTION (GHOST - ORIGINAL, FULL PATH)
+===============================================================================
+
+The original "Ghost" challenge required a multi-stage forensic investigation
+spanning email analysis, Vigenere decryption, PCAP extraction, SSTV decoding,
+and steganography. Below is the complete chain:
+
+1. EMAIL ANALYSIS (help.eml)
+
+   The email contains several custom X-headers:
+      X-Hell: Vigenere                  <-- cipher hint
+      X-Trace-Key: leetiscrazy          <-- Vigenere key
+      X-Flag: <Base32 string>           <-- DECOY flag (see below)
+      X-Packet-Trace: <Vigenere CT>     <-- encrypted Google Drive URL
+      X-Sync-Pattern: 0xDEADBEEF
+      X-Frame-Offset: 1337
+      X-Scrambler-Seed: 0x1A2B3C4D
+      X-Carrier-Frequency: 14.230MHz
+      ... and more technical-sounding headers (all red herrings)
+
+   Step 1a: Base32-decode X-Flag:
+      Result: 0xfun{M4yb3_Y0u_C4n_D0_17}
+      THIS IS A DECOY. Not the real flag.
+
+   Step 1b: Vigenere-decrypt X-Packet-Trace with key "leetiscrazy":
+      Result: A Google Drive URL pointing to a PCAP file (ghost_capture).
+
+2. PCAP ANALYSIS (ghost_capture)
+
+   The PCAP contains 17,165 frames across 64 TCP streams.
+   HTTP object extraction yields 8 files:
+      - 1.wav          (music, stereo, 44100Hz)
+      - 2.mp3          (music, mono, 256kbps)
+      - hint.jpeg      (225x224, photo)
+      - idk.png        (300x224, meme)
+      - voila.png      (700x615, "MY HEART" image)
+      - profile.jpg    (actually a WAV file - SSTV signal!)
+      - status         (actually a WAV file - SSTV signal!)
+      - avatar.jpeg    (1920x1008, contains steghide data)
+
+3. SSTV DECODING
+
+   profile.jpg and status are WAV audio files containing SSTV (Slow-Scan
+   Television) signals in Martin 1 mode. Both decode to 320x256 images:
+
+      sstv_profile.png  -->  Contains base64-encoded ciphertext:
+         0llAQygaOgRVPEBTVVtiHRIsVx82Bh5EPAsUFH4gdQ1VW2IdBxF1DCJONOorJT4F
+         fg59CFFgDVM=
+
+      sstv_status.png   -->  Contains text:
+         1n73rc3p7_cOnf1rm3d
+         (leetspeak for "intercept_confirmed")
+
+4. STEGANOGRAPHY (avatar.jpeg)
+
+   stegseek identified steghide data in avatar.jpeg:
+      Seed: 2be5a748, Encryption: rijndael-128-cbc
+
+   Password: 1n73rc3p7_c0nf1rm3d  (note: digit 0, not letter O)
+   This is a variant of the SSTV status text (c0nf vs cOnf).
+
+   Extracted file: key.txt
+   Contents (hex-encoded):
+      6c 34 79 33 72 5f 70 72 30 74 33 63 37 31 30 6e 5f 6b 33 79
+   Decoded: l4y3r_pr0t3c710n_k3y  ("layer_protection_key" in leetspeak)
+
+5. THE FLAG
+
+   In the original challenge, the relationship between the SSTV ciphertext
+   and the extracted key was ambiguous, leading to the challenge being
+   reworked into "Ghost Reloaded" where the flag is simply the key itself.
+
+   FLAG: 0xfun{l4y3r_pr0t3c710n_k3y}
+
+===============================================================================
+RABBIT HOLES & FAKE PATHS ENCOUNTERED
+===============================================================================
+
+1. DECOY FLAG IN EMAIL
+   X-Flag header Base32-decodes to 0xfun{M4yb3_Y0u_C4n_D0_17} ("Maybe You
+   Can Do It"). Intentional trap — not the real flag.
+
+2. SSTV CIPHERTEXT DECRYPTION (BIGGEST RABBIT HOLE)
+   The base64 ciphertext from sstv_profile.png was the primary time sink.
+   We attempted 20+ decryption methods:
+      - XOR with l4y3r_pr0t3c710n_k3y alone (produced 96% printable base64
+        with 2 corrupted bytes at positions 0 and 43)
+      - The partial XOR decode tantalizingly yielded fragments:
+           "x{4n4l0g_gh057_51gn4l_1n73" and "c3p73d}"
+        suggesting 0xfun{4n4l0g_gh057_51gn4l_1n73rc3p73d} — WRONG FLAG
+      - Brute-forced the 2 corrupted byte positions (all base64 chars and
+        all printable ASCII) — no valid combination found
+      - AES-256-GCM, AES-256-CBC, AES-CTR, AES-ECB with SHA256/MD5-hashed
+        keys, various IVs and nonces
+      - RC4 with single and combined keys
+      - Fernet encryption
+      - Vigenere (letter-only and full-alphabet)
+      - Multi-layer XOR with both keys
+      - AES with one key as encryption key and other as IV
+      - Concatenated keys as XOR key
+      - All combinations of key1, key2, key1+key2, key2+key1
+   None produced a valid flag. The SSTV ciphertext appears to have been
+   a deliberate ambiguity that was removed in Ghost Reloaded.
+
+3. TECHNICAL EMAIL HEADERS (ALL RED HERRINGS)
+   X-Sync-Pattern: 0xDEADBEEF, X-Frame-Offset: 1337,
+   X-Scrambler-Seed: 0x1A2B3C4D, X-CRC32: 7F8E9D0C,
+   X-Sequence-Number: 0x0000042A, X-Modulation-Index: 0.87,
+   X-Phase-Offset: 127°, X-Carrier-Frequency: 14.230MHz
+   All looked like they could be crypto parameters. None were useful.
+
+4. AUDIO FILE ANALYSIS
+   - 1.wav channel difference has a Morse-like binary pattern:
+        000000101111111111111101001011111111000000000...
+     Extensive Morse and binary analysis yielded nothing.
+   - 2.mp3 has 19.9kHz ultrasonic content at t=7s and 1300-1500Hz content
+     at t=12-14s. Spectrogram analysis showed no hidden text or flag.
+
+5. NETWORK COVERT CHANNELS
+   - Frames 301-315 (10.3.x.x): NTP and DNS packets with large binary
+     payloads to random IPs. 1044 bytes NTP + 921 bytes DNS. High entropy,
+     no flag found via XOR or direct analysis.
+   - Frames 17041-17070: ICMP ping pairs with no data payload, varying
+     destination IPs in 10.4.x.y range. IP-based encoding attempted — nothing.
+   - Frames 17112-17125 (10.5.x.x): Mixed protocol packets (DNS/NTP/
+     syslog/mDNS/ESP), 2532 bytes total, high entropy — no flag.
+   - TLS encrypted streams (54-63): Cannot decrypt without keys.
+
+6. IMAGE STEGANOGRAPHY (FALSE LEADS)
+   - hint.jpeg: stegseek full scan confirmed NO steghide data. OCR showed
+     garbled text ("3 ye La her)"). 16,661 unique colors — no LSB message.
+   - idk.png: zsteg reported "OpenPGP Public Key" in b3,g,msb,xy — likely
+     a false positive from zsteg pattern matching on random data.
+   - voila.png: 700x615 RGBA with ICC profile. zsteg found nothing. PNG
+     chunk analysis (IHDR, iCCP, cHRM, IDAT, eXIf, IEND) — no hidden
+     chunks or trailing data.
+   - sstv_profile.png: zsteg reported "OpenPGP Secret Key" in b2,bgr,lsb,xy
+     — another false positive. GPG import failed.
+
+7. SSTV STATUS TEXT AMBIGUITY
+   Two nearly identical strings caused confusion:
+      1n73rc3p7_cOnf1rm3d  (capital O, from SSTV OCR)
+      1n73rc3p7_c0nf1rm3d  (digit 0, the actual steghide password)
+   The O-vs-0 distinction was critical and not obvious from the SSTV image.
+
+8. DECOY HTTP TRAFFIC
+   TCP streams 20-34 contained HTTP requests with empty 200 OK responses —
+   padding/decoy traffic to make PCAP analysis harder.
+
+===============================================================================
+TOOLS USED
+===============================================================================
+
+- tshark / Wireshark     (PCAP analysis, HTTP object extraction)
+- exiftool               (metadata inspection)
+- steghide / stegseek    (JPEG steganography extraction + seed detection)
+- colaclanth/sstv        (SSTV Martin 1 decoding)
+- binwalk                (file carving)
+- zsteg                  (PNG LSB analysis)
+- ffmpeg / scipy         (audio spectrogram analysis)
+- 7z                     (7-Zip archive extraction)
+- Python + pycryptodome  (custom decryption attempts)
+- CyberChef              (Vigenere, Base32, XOR)
+- pytesseract            (OCR on SSTV images)
+
+===============================================================================
+KEY TAKEAWAYS
+===============================================================================
+
+1. The challenge was intentionally multi-layered with many decoys. The email
+   alone contains a fake flag, red-herring crypto params, and the real lead.
+
+2. "profile.jpg" and "status" being disguised WAV files containing SSTV
+   signals was the creative core of the challenge.
+
+3. The O-vs-0 distinction in the steghide password was subtle but critical.
+
+4. The original "Ghost" had an unsolvable ambiguity in its final decryption
+   step (the SSTV ciphertext), which led to the creation of "Ghost Reloaded"
+   where the flag is simply the extracted key: l4y3r_pr0t3c710n_k3y.
+
+5. In Ghost Reloaded, the solution is streamlined: trailing 7z archive in
+   wallpaper.png, password from SSTV/steghide work, flag inside.
+
+FLAG: 0xfun{l4y3r_pr0t3c710n_k3y}

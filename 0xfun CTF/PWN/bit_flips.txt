@@ -1,0 +1,88 @@
+===============================================================================
+0xfun CTF 2026 - bit_flips Writeup
+Category: PWN
+Points: 500
+Difficulty: Medium
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+X-0R
+can you do it in just 3 bit flips?
+Suffering ends in 30 minutes.
+nc chall.0xfun.org 10596
+Flag Format: 0xfun{}
+
+FILES PROVIDED:
+--------------
+- main (ELF 64-bit PIE, Full RELRO, Canary, NX)
+- libc.so.6 (glibc 2.42)
+- ld-linux-x86-64.so.2
+- Dockerfile (Ubuntu 24.04, socat wrapper)
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Checked protections: Full RELRO, canary, NX, PIE — all enabled.
+   Decompiled the binary and identified four key functions:
+   - setup(): disables buffering, opens ./commands into global FILE *f
+   - vuln(): leaks &main, &system, &address (stack var), sbrk(NULL),
+             then calls bit_flip() three times
+   - bit_flip(): reads a hex address and a bit index (0-7),
+                 XORs that single bit at the given address
+   - cmd(): reads lines from FILE *f via fgets, runs each through system()
+
+2. IDENTIFY THE TARGET
+
+   cmd() is never called from main. The call chain is main -> vuln -> return.
+   vuln's return address points to main+0x1d (PIE offset 0x1422).
+   cmd starts at PIE offset 0x1429.
+   Difference: 0x22 ^ 0x29 = 0x0B (bits 0, 1, 3) — that's 3 bits.
+   But returning to cmd (0x1429) crashes due to 16-byte stack misalignment.
+   Returning to cmd+1 (0x142a, skipping push rbp) fixes alignment.
+   0x22 ^ 0x2a = 0x08 — only bit 3. That frees up 2 flips.
+
+3. REDIRECT THE FILE DESCRIPTOR
+
+   cmd() reads from the global FILE *f which points to ./commands.
+   The server's commands file contains garbage, not useful shell commands.
+   To get arbitrary command execution, we need cmd() to read from stdin.
+
+   The FILE struct's _fileno field (at struct offset +0x70) holds the fd.
+   fopen("./commands") returns fd 3 in the Docker/socat environment.
+   Flipping bit 0 (3 -> 2) then bit 1 (2 -> 0) changes _fileno to 0 (stdin).
+
+4. COMPUTE THE FILENO ADDRESS
+
+   sbrk(NULL) returns the current program break (top of heap).
+   The FILE struct for f is allocated on the heap at a fixed offset below sbrk.
+   On glibc 2.39 (Ubuntu 24.04 as per Dockerfile):
+     fileno_addr = sbrk(NULL) - 0x20cf0
+
+5. EXECUTE THE 3 BIT FLIPS
+
+   Flip 1: bit 3 at (address_var + 0x18)
+           Changes vuln's return address from 0x...22 to 0x...2a (cmd+1)
+
+   Flip 2: bit 0 at fileno_addr
+           Changes _fileno from 3 to 2
+
+   Flip 3: bit 1 at fileno_addr
+           Changes _fileno from 2 to 0 (stdin)
+
+6. GET THE FLAG
+
+   After the 3 flips, vuln returns to cmd+1.
+   cmd() now calls fgets on fd 0 (stdin) — our socket.
+   We send "cat flag" and system() executes it, printing the flag.
+
+TOOLS USED:
+-----------
+- objdump / checksec (binary analysis)
+- Python + pwntools (exploit script)
+- strace (tracing syscalls to verify cmd() execution)
+- /proc/PID/mem (verifying return address and FILE struct contents)
+
+FLAG: 0xfun{3_b1t5_15_4ll_17_74k35_70_g37_RC3_safhu8}

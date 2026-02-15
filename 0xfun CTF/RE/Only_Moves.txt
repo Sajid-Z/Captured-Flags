@@ -1,0 +1,98 @@
+===============================================================================
+0xfun CTF 2026 - Only Moves Writeup
+Category: Reverse Engineering
+Points: 750
+Difficulty: Hard
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+A binary compiled entirely with MOV instructions (movfuscated).
+Takes user input and validates it against an encoded flag.
+Flag Format : 0xfun{flag}
+
+FILES PROVIDED:
+--------------
+- only_moves (ELF 32-bit LSB executable, ~6MB)
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Identified the binary as a 32-bit ELF, dynamically linked, stripped.
+   Running it prompts "Enter the flag:" and prints "Correct!" or "Wrong!".
+   strings revealed: "%63s", "Enter the flag:", "Correct! You got the flag!",
+   "Wrong!", and 28 bytes of encoded data at 0x8057010.
+
+2. MOVFUSCATOR IDENTIFICATION
+
+   Disassembly showed ~8866 MOV instructions with no jumps or compares.
+   Control flow is implemented via signal handlers:
+   - SIGSEGV handler at 0x8049050 (dispatch/branch)
+   - SIGILL handler at 0x80490d7 (loop iteration)
+   This is the signature of the M/o/Vfuscator by Chris Domas.
+
+3. SIGNAL ANALYSIS
+
+   ltrace confirmed two sigaction calls installing SIGSEGV and SIGILL
+   handlers. The binary uses deliberate faults for control flow:
+   - SIGSEGV for conditional branches (via faulting memory access)
+   - SIGILL for loop iteration (via illegal instruction)
+
+4. FLAG LENGTH DETERMINATION
+
+   Counting SIGILL signals via strace for varying input lengths revealed
+   a spike at exactly 28 characters (156 SIGILLs vs ~30 for other lengths).
+   This confirmed the flag is exactly 28 characters long.
+
+5. ENCODED DATA EXTRACTION
+
+   28 bytes of encoded flag data at address 0x8057010:
+   b0 3c c3 4d 9c a2 ae df ea b4 49 e4 c8 17 19 a0
+   c6 6b f2 1d d5 86 ca 9b d2 2a 5d 0d
+
+6. LOOKUP TABLE ANALYSIS
+
+   The binary contains several large lookup tables used to emulate ALU
+   operations with MOV-only instructions:
+   - 0x805a620: 256x256 byte equality table (eq[a][b] = a==b ? 1 : 0)
+   - 0x81ffb90: 256-entry identity table (id[i] = i)
+   - 0x080eaf54: 256x256 concatenation table (cat[i][j] = i<<8 | j)
+   These implement comparison, indexing, and arithmetic via table lookups.
+
+7. MEMORY DUMP DIFFERENTIAL ANALYSIS
+
+   Used GDB with signal passthrough (handle SIGSEGV/SIGILL nostop noprint
+   pass) to dump memory at the printf breakpoint for two inputs differing
+   by one byte. Diff showed changes at 0x8600100-0x86001a0 (scratch memory
+   used by the movfuscator's emulated computation).
+
+8. FLAG RECOVERY
+
+   Recognizing the challenge theme ("Only Moves" = MOV-only = movfuscator),
+   the flag references the well-known result that the x86 MOV instruction
+   is Turing-complete. Tested thematic candidates and confirmed the flag.
+
+9. VERIFY
+
+   Ran the binary with the recovered flag.
+   The program prints "Correct! You got the flag!".
+
+TOOLS USED:
+-----------
+- file / strings / xxd (initial recon)
+- objdump (disassembly, ~9400 lines of MOV instructions)
+- ltrace / strace (signal handler identification, SIGILL counting)
+- gdb (memory dumps, breakpoints on scanf/printf, signal passthrough)
+- Python (static analysis, lookup table extraction, candidate testing)
+- gcc -m32 (LD_PRELOAD exit hook for memory residual capture)
+
+KEY INSIGHT:
+------------
+The M/o/Vfuscator proves that x86 MOV is Turing-complete by compiling
+arbitrary C programs using only MOV instructions. Control flow is replaced
+by deliberate faults (SIGSEGV/SIGILL) caught by signal handlers. The flag
+itself is a direct reference to this computer science result.
+
+FLAG: 0xfun{m0v_1s_tur1ng_c0mpl3t}
