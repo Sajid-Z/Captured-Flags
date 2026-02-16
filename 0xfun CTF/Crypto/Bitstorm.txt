@@ -1,0 +1,28 @@
+Title: BitStorm - Recovering the Initial State
+
+Summary:
+The PRNG in chall.py is linear over GF(2). Each 64-bit output is a linear combination of the 2048 seed bits (32 words x 64 bits). With 60 outputs we get 3840 linear equations, enough to solve for the 2048 unknown bits. Build a linear system, perform Gaussian elimination over GF(2), reconstruct the 256-byte seed, and decode the flag content.
+
+Key Observations:
+- The state update and output function use only XOR, shifts, and rotates, all linear over GF(2).
+- Represent each state bit as a basis vector over 2048 variables.
+- For each output bit, emit one linear equation.
+- Solve the system to recover the full initial state.
+
+Inputs:
+- chall.py (PRNG definition)
+- output.txt (60 outputs)
+
+Steps:
+1. Parse the 60 outputs from output.txt.
+2. Model the initial 32 x 64-bit state as 2048 symbolic bits.
+3. Symbolically simulate 60 steps of the PRNG, producing symbolic 64-bit outputs.
+4. For each output bit, build a linear equation over GF(2) = RHS (observed bit).
+5. Gaussian eliminate to solve for all 2048 bits.
+6. Pack bits into a 256-byte seed and decode the flag content before the first null byte.
+
+Result:
+0xfun{L1n34r_4lg3br4_W1th_Z3_1s_Aw3s0m3}
+
+Notes:
+- Any GF(2) solver works (hand-rolled elimination, z3 bit-vectors, or Sage). The approach above used a custom bitset-based eliminator for speed.
