@@ -1,0 +1,90 @@
+Title: Fortune challenge writeup (truncated 64-bit LCG)
+
+Challenge prompt:
+- "It speaks in 64-bit truths but only reveals 32-bit glimpses. The constants are known. The seed is not."
+- Remote: nc chall.0xfun.org 64085
+
+Behavior recovered from local file `fortune.py`:
+
+    M = 2^64
+    A = 2862933555777941757
+    C = 3037000493
+    state_{n+1} = (A * state_n + C) mod 2^64
+    glimpse_n = state_n >> 32
+
+The service prints 3 glimpses (high 32 bits of consecutive internal states x1, x2, x3),
+then asks for the next 5 full 64-bit states (x4..x8).
+
+------------------------------------------------------------
+Core idea
+------------------------------------------------------------
+
+Write each state as:
+
+    x_i = (h_i << 32) + l_i
+
+where:
+- h_i is known from the glimpse
+- l_i (low 32 bits) is unknown
+
+Split multiplier:
+
+    A = (Ah << 32) + Al
+    Ah = A >> 32
+    Al = A & 0xffffffff
+
+From one LCG step:
+
+    x_{i+1} = A*x_i + C (mod 2^64)
+
+The low half is:
+
+    p_i = Al*l_i + C
+    l_{i+1} = p_i mod 2^32
+    carry_i = floor(p_i / 2^32)
+
+The high half is:
+
+    h_{i+1} = (Ah*l_i + carry_i + Al*h_i) mod 2^32
+
+So with known (h1, h2, h3), we brute-force l1 in [0, 2^32):
+1) compute l2, carry1, check high equation gives h2
+2) compute from l2 -> carry2, check high equation gives h3
+
+Any l1 that passes both checks is valid. In practice, this yields a unique solution.
+Then rebuild x1, step forward with the original LCG to get exact x2, x3, and predict x4..x8.
+
+------------------------------------------------------------
+Implementation
+------------------------------------------------------------
+
+Files used:
+- `recover_l1.c`
+  - Fast brute-force over all 2^32 candidates.
+  - Uses `-O3` and OpenMP to finish quickly.
+- `solve.py`
+  - Connects to remote.
+  - Parses the three printed glimpses.
+  - Calls `./recover_l1 h1 h2 h3` to recover l1.
+  - Reconstructs x1, computes x2/x3, predicts x4..x8.
+  - Sends predictions as space-separated integers.
+
+Compile and run:
+
+    cc -O3 -march=native -fopenmp recover_l1.c -o recover_l1
+    python3 solve.py
+
+Observed result:
+
+    IMPOSSIBLE! You've pierced the Fortune Teller's heart!
+    0xfun{trunc4t3d_lcg_f4lls_t0_lll}
+
+------------------------------------------------------------
+Why this works
+------------------------------------------------------------
+
+This is a classic truncated LCG weakness:
+- Even though only high 32 bits are leaked, consecutive outputs constrain the unknown low bits.
+- Because parameters are known and modulus is a power of 2, carries are structured and easy to test.
+- A small number of leaked outputs is enough to recover full internal state and predict all future outputs.
+
