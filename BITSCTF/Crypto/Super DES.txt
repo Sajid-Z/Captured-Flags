@@ -1,0 +1,55 @@
+# Super DES - Simple Writeup
+
+## The Goal
+We need to find the secret `flag`. The server encrypts it using a custom version of Triple DES.
+
+## How the Server Works
+The server uses three keys: `k1`, `k2`, and `k3`.
+- `k1` is a secret key chosen by the server.
+- `k2` and `k3` are keys that **we** get to choose!
+
+The server gives us two "ultra secure" options:
+1. **Encrypt:** It encrypts our text (or the flag) using `k3`, then `k2`, then `k1`.
+   `Result = Encrypt_k1( Encrypt_k2( Encrypt_k3( Text ) ) )`
+2. **Decrypt:** It encrypts using `k3`, then `k2`, but then *decrypts* using `k1`.
+   `Result = Decrypt_k1( Encrypt_k2( Encrypt_k3( Text ) ) )`
+
+## The Trick: "Semi-Weak Keys"
+DES has a known flaw: there are special pairs of keys called "semi-weak keys". 
+If you encrypt something with the first key, and then encrypt it *again* with the second key, they cancel each other out! It's like doing nothing at all.
+
+Here is a famous pair of semi-weak keys (in hex):
+- Key A: `011F011F010E010E`
+- Key B: `1F011F010E010E01`
+
+If we tell the server to use Key A for `k2` and Key B for `k3`, the `Encrypt_k2( Encrypt_k3(...) )` part completely disappears!
+
+So, the server's complex formulas become very simple:
+1. **Encrypt:** `Result = Encrypt_k1( Text )`
+2. **Decrypt:** `Result = Decrypt_k1( Text )`
+
+## How to Solve It Yourself
+
+Now that we can directly encrypt and decrypt using the server's secret `k1`, here is what you do:
+
+**Step 1: Get the encrypted flag**
+1. Connect to the server.
+2. When asked for `k2`, enter: `011F011F010E010E`
+3. When asked for `k3`, enter: `1F011F010E010E01`
+4. Choose option `2` (ultra secure v1). This is our simplified **Encrypt** mode.
+5. Choose option `1` (encrypt flag).
+6. The server will give you a long hex string. This is the flag, encrypted with `k1`. Copy this string!
+
+**Step 2: Decrypt the flag**
+1. The server will ask for `k2` and `k3` again. Enter the exact same keys:
+   - `k2`: `011F011F010E010E`
+   - `k3`: `1F011F010E010E01`
+2. Choose option `3` (ultra secure v2). This is our simplified **Decrypt** mode.
+3. Choose option `2` (encrypt your own text).
+4. Paste the long hex string you copied in Step 1.
+5. The server will decrypt it using `k1` and give you back a new hex string.
+
+**Step 3: Read the flag**
+1. Take the final hex string the server gave you.
+2. Convert that hex string into regular text (you can use an online tool like CyberChef, or Python's `bytes.fromhex()`).
+3. The first part of the text will be your flag! (There might be some weird characters at the end, just ignore them).

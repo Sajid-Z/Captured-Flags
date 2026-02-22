@@ -1,7 +1,4 @@
-Challenge name: 
-Rusty-Proxy 
-Easy 
-Category: Web
+Rusty-Proxy Easy Step-by-Step Solve
 
 Challenge:
 http://rusty-proxy.chals.bitskrieg.in:25001
@@ -72,3 +69,4 @@ If it fails temporarily
 Sometimes CTF infra is unstable. Retry the same command a few times:
 
 `for i in {1..5}; do curl -s "http://rusty-proxy.chals.bitskrieg.in:25001/ad%6din/flag"; echo; done`
+

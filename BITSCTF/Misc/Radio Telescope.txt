@@ -1,0 +1,55 @@
+RT-7 Radio Telescope – CTF Writeup
+
+Challenge Summary
+
+We are given a long log file from a radio telescope aimed at the Vega
+cluster. The problem description hints that the telescope feed “randomly
+skips a beat: a clearing in a forest.”
+
+This metaphor is the key to solving the challenge.
+
+Observation
+
+The log consists mostly of floating-point values that resemble noisy
+signal data. However, throughout the file there are sections where the
+values become unusually stable and tightly clustered around specific
+numbers.
+
+These stable clusters represent the “clearings in the forest” — regions
+where the noise temporarily disappears.
+
+Key Insight
+
+The stable plateaus correspond to ASCII values when rounded to the
+nearest integer.
+
+For example: - ~66.9 → 67 → ‘C’ - ~83.9 → 84 → ‘T’ - ~122.9 → 123 →
+‘{’ - ~115 → 115 → ‘s’ - ~108 → 108 → ‘l’ - ~49 → 49 → ‘1’ - ~70 → 70 →
+‘F’
+
+Each low-variance plateau decodes into a character.
+
+Method
+
+1.  Parse the floating-point values from the log file.
+2.  Slide a window across the data.
+3.  Detect regions with extremely low variance (flat plateaus).
+4.  Compute the average of each plateau.
+5.  Round to the nearest integer.
+6.  Convert that integer to ASCII.
+
+Decoded Message
+
+Putting all decoded characters together yields:
+
+CTF{s1l3nc3_1n_th3_n01s3}
+
+Final Flag
+
+CTF{s1l3nc3_1n_th3_n01s3}
+
+Conclusion
+
+The challenge hides data inside statistical anomalies within noisy
+signal data. By identifying low-variance regions and converting them to
+ASCII, we extract the embedded flag.

@@ -1,0 +1,93 @@
+Aliens Eat PY - Easy Solve Writeup
+
+Goal
+- Recover the flag from `output.txt` using the weak AES implementation in `aes.py`.
+
+What is given
+- `aes.py`: custom AES-like cipher.
+- `output.txt` contains:
+  - `key_hint`
+  - `encrypted_flag`
+  - many plaintext/ciphertext sample pairs.
+
+Important observation (the whole trick)
+- A normal AES key is 16 bytes (32 hex chars).
+- Here, `key_hint` is:
+  - `26ab77cadcca0ed41b03c8f2e5`
+  - length = 26 hex chars = 13 bytes.
+- So only 3 key bytes are missing.
+- Missing space is only `2^24` (16,777,216) keys, brute-forceable.
+
+How to solve (simple workflow)
+1. Take one sample pair from `output.txt`.
+2. Try all possible 3-byte suffixes.
+3. For each candidate key:
+   - full key = `key_hint + suffix`
+   - encrypt the sample plaintext with `AES.encrypt`
+   - compare with sample ciphertext
+4. When it matches, key is recovered.
+5. Use that key to decrypt `encrypted_flag` block-by-block (16 bytes each).
+6. Remove PKCS#7 padding.
+
+Working script (copy-paste and run)
+Save this as `solve.py` in the challenge folder:
+
+```python
+from aes import AES
+
+# 13 known bytes from output.txt
+key_hint = bytes.fromhex("26ab77cadcca0ed41b03c8f2e5")
+
+# first sample line from output.txt
+sample_pt = bytes.fromhex("376f73334dc9db2a4d20734c0783ac69")
+sample_ct = bytes.fromhex("9070f81f4de789663820e8924924732b")
+
+encrypted_flag = bytes.fromhex(
+    "8e70387dc377a09cbc721debe27c468157b027e3e63fe02560506f70b3c72ca1"
+    "9130ae59c6eef47b734bb0147424ec936fc91dc658d15dee0b69a2dc24a78c44"
+)
+
+# brute-force 3 unknown bytes
+found_key = None
+for i in range(1 << 24):
+    suffix = i.to_bytes(3, "big")
+    key = key_hint + suffix
+    if AES(key).encrypt(sample_pt) == sample_ct:
+        found_key = key
+        print("[+] Key found:", key.hex())
+        break
+
+if found_key is None:
+    print("[-] Key not found")
+    raise SystemExit
+
+# decrypt encrypted_flag (ECB-like block encryption)
+cipher = AES(found_key)
+pt = b""
+for i in range(0, len(encrypted_flag), 16):
+    pt += cipher.decrypt(encrypted_flag[i:i+16])
+
+# remove PKCS#7 padding
+pad = pt[-1]
+flag = pt[:-pad].decode()
+print("[+] Flag:", flag)
+```
+
+Run:
+```bash
+python3 solve.py
+```
+
+Expected output
+- Key: `26ab77cadcca0ed41b03c8f2e5cdec0c`
+- Flag: `BITSCTF{7h3_qu1ck_br0wn_f0x_jump5_0v3r_7h3_l4zy_d0g}`
+
+If brute-force feels slow
+- Pure Python may take a while.
+- Same logic in C/PyPy is faster.
+- But method is exactly the same: 13-byte known prefix + 3-byte brute-force.
+
+Why this challenge is breakable
+- Key material is leaked (`key_hint`).
+- Cipher uses only 4 rounds (weaker than real AES-128).
+- You are given known plaintext/ciphertext pairs, which makes key testing easy.
