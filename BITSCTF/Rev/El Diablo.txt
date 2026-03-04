@@ -1,0 +1,104 @@
+===============================================================================
+BITSCTF - El Diablo Writeup
+Category: Reverse Engineering
+Points: 492
+Author: react
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+I bought this program but I lost the license file..
+
+FILES PROVIDED:
+---------------
+- challenge
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Started with file triage:
+   - ELF64 PIE, stripped
+   - Strings showed anti-debug checks and license-related messages
+   - Binary looked packed (UPX marker present)
+
+2. UNPACK THE BINARY
+
+   The sample was UPX packed.
+   After unpacking, static analysis became much cleaner and important
+   strings/routines were visible.
+
+3. UNDERSTAND INPUT FORMAT
+
+   In main, the program:
+   - Loads the license file content
+   - Requires prefix: "LICENSE-"
+   - Takes the payload after the prefix as hex
+   - Decodes hex pairs into raw bytes (license buffer)
+
+   So the effective input format is:
+   LICENSE-<hex bytes>
+
+4. HANDLE ANTI-DEBUG
+
+   Runtime checks include ptrace and debugger process detection logic.
+   In this environment, ptrace behavior can trip false positives.
+   Used a tiny LD_PRELOAD hook that makes ptrace return success so the
+   program can continue to the VM stage.
+
+5. REVERSE THE VM LAYER
+
+   After parsing the license bytes, execution moves to a custom VM.
+   The VM prints:
+   "The flag lies here somewhere..."
+
+   Key observations:
+   - VM bytecode is stored in program memory
+   - A SIGILL-based routine decrypts/initializes VM data
+   - Dispatch table maps opcode values to handler functions
+
+6. DUMP REAL VM BYTECODE
+
+   Hooked runtime setup and dumped the actual decrypted VM program.
+   This gave a stable byte stream to analyze directly instead of guessing
+   from partially transformed static blobs.
+
+7. TRACE EXECUTION AND EXTRACT CHECK
+
+   Instrumented opcode dispatch and logged PC/opcode flow.
+   The executed path is a repeated pattern that:
+   - Loads a constant byte
+   - Loads one license byte by index
+   - XORs them
+   - Prints resulting character (via PRINT_FLAG_CHAR path)
+
+   This is effectively:
+   output_char = const[i] XOR license[index[i]]
+
+8. SOLVE LICENSE BYTES
+
+   From the traced equations, solved the 10-byte license key:
+
+   99 f5 67 11 24 d5 20 d5 f6 3c
+
+   License file content:
+   LICENSE-99f5671124d520d5f63c
+
+9. VERIFY
+
+   Running with:
+   - valid license
+   - ptrace bypass preload
+   - PRINT_FLAG_CHAR enabled
+
+   prints the full flag string.
+
+TOOLS USED:
+-----------
+- file / strings / objdump / radare2
+- gdb (runtime checks)
+- LD_PRELOAD hooks (ptrace + VM instrumentation)
+- Python (parsing traces and deriving key bytes)
+
+FLAG: BITSCTF{l4y3r_by_l4y3r_y0u_unr4v3l_my_53cr375}

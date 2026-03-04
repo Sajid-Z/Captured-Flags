@@ -1,0 +1,106 @@
+===============================================================================
+BITSCTF 2026 - Orbital Relay Writeup
+Category: Pwn
+Points: 500
+Author: SuperSniper
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+An emergency relay node still accepts framed packets after key-rotation failure.
+Every packet needs a valid session MAC, malformed traffic is dropped silently,
+and the target service is exposed at:
+
+- nc 20.193.149.152 1339
+
+FILES PROVIDED:
+---------------
+- orbital_relay.tar.gz
+  - orbital_relay (ELF)
+  - Dockerfile / run / docker-compose.yaml
+  - description.md
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Static triage (`checksec`, `objdump`, `nm`, `readelf`) showed:
+   - Full RELRO
+   - Canary
+   - NX
+   - PIE
+
+   So the intended path is logic/protocol abuse, not simple stack smashing.
+
+2. REVERSE THE PROTOCOL AND CRYPTO CHECKS
+
+   From `main`:
+   - Handshake must be exact `SYNCv3?` (7 bytes)
+   - Server returns 4-byte session value (`ABCD` => `0x44434241`)
+   - Frame format is:
+     - `chan` (u8), `flags` (u8), `len` (u16), `mac` (u32), `payload`
+
+   MAC routine (`mac32`) was reimplemented exactly from assembly.
+   Important detail: per-byte loop does `acc ^= (byte + 0x3d)` as 32-bit math.
+
+3. AUTH GATE
+
+   `chan=3` requires a 4-byte token:
+   - `auth = mix32(st84 ^ sess) ^ 0x31c3b7a9`
+   - `st84` is initialized to `0x28223b24`
+
+   Sending this valid auth enables privileged flow (`st[0x89] = 1`).
+
+4. BUGS USED
+
+   In `handle_diag` (`chan=1` TLV parser):
+   - `tag 0x10` decrypts attacker data into global `st` buffer.
+   - `tag 0x31` (size 8) writes attacker-controlled qword into global `cb_enc`.
+   - `tag 0x40` executes:
+     `__printf_chk(2, st, st80, st, keep_win);`
+     This is a format-string sink with attacker-controlled format (`st`).
+
+   In `main`, `chan=9` does:
+   - `fn = dec_cb(cb_enc)`
+   - `call fn`
+   if auth is set and level byte `st[0x88] > 2`.
+
+5. LEAK A PIE POINTER
+
+   Sent authenticated frames:
+   - set level using `tag 0x22` with value `3`
+   - use `tag 0x10` to place format string `%p.%p.%p` into `st`
+   - trigger `tag 0x40`
+
+   Output leaks pointers, and the third value is `keep_win`, which equals the
+   runtime address of `win` in PIE builds.
+
+6. FORGE CALLBACK AND TRIGGER CODE EXECUTION
+
+   Callback decode is:
+   - `dec_cb(x) = x ^ ((st80 << 32) ^ st84 ^ 0x9e3779b97f4a7c15)`
+
+   So to call `win`, send:
+   - `cb_enc = win_addr ^ K`
+   - where `K = ((st80 << 32) ^ st84 ^ 0x9e3779b97f4a7c15)`
+
+   Write this via TLV `tag 0x31`, ensure level is still `>2`, then send `chan=9`.
+   The service calls `win()`, reads `flag.txt`, and writes the flag to socket.
+
+7. AUTOMATION
+
+   Final exploit script:
+   - `PWN/Orbital Relay/exploit.py`
+
+   Usage:
+   - `python3 'PWN/Orbital Relay/exploit.py'`
+   - optional args: `python3 'PWN/Orbital Relay/exploit.py' <host> <port>`
+
+TOOLS USED:
+-----------
+- checksec / objdump / readelf / nm / strings
+- Python 3 (socket-based exploit)
+- gdb (local validation)
+
+FLAG: BITSCTF{0rb1t4l_r3l4y_gh0stfr4m3_0v3rr1d3}

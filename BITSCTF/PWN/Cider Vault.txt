@@ -1,0 +1,93 @@
+===============================================================================
+BITSCTF 2026 - Cider Vault Writeup
+Category: Pwn
+Points: 500
+Author: SuperSniper
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+The Storybook Workshop keeps magical story cards in a fragile old vault.
+Caretakers can create cards, write words, read chapters, merge pages, and ring
+the moon bell.
+
+FILES PROVIDED:
+---------------
+- cider_vault
+- libc.so.6 (Ubuntu GLIBC 2.31-0ubuntu9.18)
+- ld-linux-x86-64.so.2
+- run.sh / Dockerfile / docker-compose.yaml
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Started with static analysis (`checksec`, `strings`, `objdump`, `nm`).
+   Mitigations were strong (Full RELRO, Canary, NX, PIE), so the solve path had
+   to be logic/heap-based.
+
+   The binary keeps 12 slots (`vats`), each slot storing:
+   - heap pointer
+   - allocated size
+
+   Important bugs from menu handlers:
+   - `tear page` frees memory but does not clear the slot pointer (UAF).
+   - `peek page` allows reading up to `size + 0x80` (OOB read).
+   - `paint page` allows writing up to `size + 0x80` (OOB write).
+   - `whisper path` rewrites slot pointer as `star_token ^ MAGIC_CONST`.
+
+2. BUILD A LIBC LEAK
+
+   Created:
+   - page 0 with size `0x500` (large chunk)
+   - page 1 with size `0x100` (prevents top consolidation)
+
+   Then freed page 0. This puts it into unsorted bin while keeping the stale
+   pointer alive due to UAF.
+
+   Reading page 0 with `peek` leaks unsorted-bin metadata:
+   - `fd` points into `main_arena`
+   - libc base is `fd - 0x1ecbe0` for this provided libc
+
+3. ARBITRARY WRITE USING WHISPER
+
+   Goal: overwrite `__free_hook` with `system`.
+
+   From leaked libc base:
+   - `__free_hook = libc_base + 0x1eee48`
+   - `system = libc_base + 0x52290`
+
+   `whisper path` lets us point a live slot anywhere:
+   - choose page 1
+   - send `star_token = (__free_hook ^ MAGIC_CONST)` as signed decimal
+
+   Now page 1 pointer is `__free_hook`, so `paint page 1` writes directly into
+   libc hook storage. Wrote `p64(system)` there.
+
+4. TRIGGER CODE EXECUTION
+
+   Created page 2, wrote `cat flag.txt\x00` into it, then freed page 2.
+   Since `__free_hook` now points to `system`, `free(page2)` becomes:
+
+   `system("cat flag.txt")`
+
+   The service prints the flag on the socket.
+
+5. AUTOMATION
+
+   Final exploit script:
+   - `PWN/Cider Vault/exploit.py`
+   - no pwntools dependency (pure Python sockets/process handling)
+
+   Usage:
+   - Local: `python3 'PWN/Cider Vault/exploit.py' --local`
+   - Remote: `python3 'PWN/Cider Vault/exploit.py' --host chals.bitskrieg.in --port 39872`
+
+TOOLS USED:
+-----------
+- checksec / strings / nm / objdump / readelf
+- Python 3 exploit script
+- local test run with provided `ld-linux` + `libc`
+
+FLAG: BITSCTF{4fb4ec041c5aa2beb03328f31fd566bc}

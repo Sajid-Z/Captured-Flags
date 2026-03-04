@@ -1,0 +1,110 @@
+===============================================================================
+BITSCTF 2026 - Safe not Safe Writeup
+Category: Reverse Engineering
+Points: 436
+Author: abdullah790
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Forgot the password to a smart safe. Firmware was provided.
+Remote service:
+nc 135.235.195.203 3000
+
+FILES PROVIDED:
+--------------
+- dist.zip
+  - zImage
+  - run.sh
+  - flag.txt
+  - Dockerfile
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+   
+   Unzipped firmware package and inspected boot command from run.sh.
+   It boots ARM Linux with rdinit=/init and attaches flag.txt as a virtio block
+   device (/dev/vda in guest).
+
+2. EXTRACT INITRAMFS AND TARGET BINARY
+   
+   Extracted zImage using binwalk and located:
+   - /init
+   - /challenge/lock_app
+   
+   init script sets SUID on /challenge/lock_app and tells user to run it.
+
+3. LOCAL KERNEL CHECK (FIRST)
+   
+   Verified challenge boots locally with qemu-system-arm:
+   - machine: virt
+   - cpu: cortex-a15
+   - kernel: zImage
+   - rdinit: /init
+   
+   This confirms local behavior matches remote shell flow:
+   - boot prompt
+   - run /challenge/lock_app
+   - interact with lock menu
+
+4. REVERSE THE PASSWORD RESET LOGIC
+   
+   Main observations from lock_app:
+   - Program prints startup time: "The current time is: <ts>"
+   - It seeds RNG with that timestamp and builds a 256-byte shuffled table
+     using Fisher-Yates.
+   - Reset option re-seeds RNG with current time again and uses first 2 rand()
+     outputs.
+   - Those two values are transformed through the startup substitution table.
+   - Challenge/response are linked with one 32-bit random value from /dev/urandom.
+
+5. IMPORTANT FORMULAS
+   
+   Let:
+   - a = subbytes(rand1)
+   - b = subbytes(rand2)
+   - x = 32-bit value read from /dev/urandom
+   
+   Then:
+   - f1 = (((a * 0x7A69) + b) & 0xffffffff) % 1000000
+   - challenge = x ^ f1
+   - f2 = (a ^ b) % 1000000
+   - expected_response = x ^ f2
+   
+   So response can be derived from printed challenge once startup table and
+   reset seed time are reconstructed.
+
+6. TIMING + REMOTE EXPLOIT
+   
+   Remote service flow:
+   - connect to shell
+   - run /challenge/lock_app
+   - parse startup timestamp
+   - choose option 2 (reset)
+   - parse printed challenge code
+   
+   Exploit script reconstructs:
+   - startup shuffle table from startup timestamp
+   - reset seed using local/remote clock offset and send/receive midpoint timing
+   - tries small +/- seed deltas for robustness
+   
+   Once correct seed is used, computed response is accepted immediately.
+
+7. AUTOMATION
+   
+   Final solver:
+   Reverse Engineering/Safe not Safe/solve.py
+   
+   Example run:
+   python3 "Reverse Engineering/Safe not Safe/solve.py" --verbose
+
+TOOLS USED:
+-----------
+- binwalk
+- radare2
+- qemu-system-arm / qemu-arm
+- Python (ctypes + socket exploit script)
+
+FLAG: BITSCTF{7h15_41n7_53cur3_571ll_n07_p47ch1ng_17}

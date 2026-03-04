@@ -1,0 +1,90 @@
+===============================================================================
+BITSCTF 2026 - Netapp Writeup
+Category: Web Exploitation
+Points: 392
+Author: kalu0x
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+We think our internal services are protected because we use netapp 😘
+
+Target:
+https://netapp.bitskrieg.in
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   The landing page looked static, but hinted at an internal service:
+   - "flag-service" marked as INTERNAL
+   - "Internal services are only accessible through our vpn"
+
+   First scan showed mostly empty 404 responses, but one strong anomaly:
+   - /.git/HEAD was publicly accessible
+
+2. CONFIRM GIT EXPOSURE
+
+   The following sensitive paths were exposed:
+   - /.git/HEAD
+   - /.git/config
+   - /.git/index
+   - /.git/logs/HEAD
+   - /.git/logs/refs/heads/main
+   - /.git/COMMIT_EDITMSG
+
+   This confirmed source disclosure through the web root.
+
+3. RECONSTRUCT REPOSITORY
+
+   Using leaked HEAD, index, and object hashes, the repository was rebuilt.
+   Recovered files:
+   - index.html
+   - flag-service/aws-security-group.tf
+   - flag-service/bitsctf-2026-vpn-only.tf
+
+4. EXTRACT INFRASTRUCTURE SECRETS
+
+   Terraform files leaked key deployment details:
+   - EC2 origin IP: 3.208.18.209
+   - AWS Security Group allows HTTP/HTTPS only from Cloudflare IP ranges
+   - Cloudflare rule blocks host bitsctf-2026.hvijay.dev (vpn-only logic)
+
+   This means:
+   - Direct origin probing from a normal VPS may fail
+   - A Cloudflare-origin request path is required
+
+5. BUILD CLOUDFLARE PIVOT
+
+   A Cloudflare Worker was deployed to fetch the leaked origin IP with
+   controlled Host headers.
+
+   Initial worker requests returned:
+   - error code: 1003
+
+   Reason:
+   - Worker fetch to raw IP literal was rejected by Cloudflare policy.
+
+6. FIX PIVOT TARGET (BYPASS 1003)
+
+   Switched origin from raw IP to DNS form resolving to same IP:
+   - 3.208.18.209.nip.io
+
+   Example successful request:
+   curl "$WORKER/single?ip=3.208.18.209.nip.io&host=bitsctf-2026.hvijay.dev&path=/&scheme=http"
+
+7. RETRIEVE FLAG
+
+   Response body returned the flag directly from origin:
+   BITSCTF{3v3n_41_15_84d_47_c0nf19u24710n}
+
+TOOLS USED:
+-----------
+- curl / ffuf
+- jq
+- git object reconstruction (manual)
+- Cloudflare Worker (wrangler)
+- nip.io (IP-to-hostname mapping for worker fetch compatibility)
+
+FLAG: BITSCTF{3v3n_41_15_84d_47_c0nf19u24710n}

@@ -1,0 +1,104 @@
+===============================================================================
+BITSCTF - gcc (Ghost C Compiler) Writeup
+Category: Reverse Engineering
+Points: 500
+Author: Aur0r4
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+"I have made a successful safe to use C compiler..."
+Given only one stripped ELF (`ghost_compiler`), recover the flag.
+
+FILES PROVIDED:
+--------------
+- Reverse Engineering/chall.zip
+  - ghost_compiler
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Quick triage showed:
+   - 64-bit PIE ELF, stripped
+   - No obvious flag string in `strings`
+   - Uses `system`, `strcat`, `fopen`, `fread`, `fwrite`, `unlink`, `chmod`
+
+   So this is mostly logic reversing, not memory-corruption pwn.
+
+2. REVERSE MAIN CONTROL FLOW
+
+   Using radare2 (`pdf`/`pdc`), main calls three important routines:
+
+   - `fcn.00001349(argv[0])` -> finds an offset `n`
+   - `fcn.000014b5(argv[0], n)` -> computes a 64-bit key-like value
+   - `fcn.00001583(buf, n, key)` -> checks for `BITSCTF{` after decoding
+
+   After checks, binary rewrites itself and then executes:
+   `system("gcc " + all user args)`
+
+3. UNDERSTAND THE SELF-DESTRUCT LOGIC
+
+   The program reads its own file (`argv[0]`) into memory.
+
+   If size > `n + 63`, it decrypts 8 bytes and verifies they equal `BITSCTF{`.
+   If this passes, it zeroes 64 bytes at `buf[n : n+64]`.
+
+   Then it does:
+   - `unlink(argv[0])`
+   - `fopen(argv[0], "wb")`
+   - write modified bytes back
+
+   Meaning: running the binary mutates it permanently (self-destruct behavior).
+
+4. WHY THE LOCAL BINARY BECAME DIFFERENT
+
+   After execution, current `ghost_compiler` hash did not match the zip payload.
+   Diffing showed exactly 64 changed bytes at file offset range:
+   `0x3020 .. 0x305f`.
+
+   That is exactly the block the binary zeros after a successful gate.
+
+5. RECOVER THE HIDDEN FLAG BLOCK (STATIC SOLVE)
+
+   Important: extract pristine binary from zip first:
+   - `unzip -p chall.zip ghost_compiler > ghost_compiler.orig`
+
+   From the reversed logic:
+   - `fcn.00001349` finds `n` by searching for an 8-byte marker stored in `.data`
+   - On pristine file, marker is at `n = 0x3020`
+   - `fcn.000014b5` computes FNV-1a style hash over file, skipping `[n, n+63]`
+   - final key = `0xcafebabe00000000 ^ hash`
+   - `fcn.00001583` decodes bytes with `decoded[i] = block[i] ^ (key & 0xff)`
+     and rotates key right by 1 each iteration
+
+   Decoding the 64-byte block at `0x3020` yields:
+   `BITSCTF{n4n0m1t3s_4nd_s3lf_d3struct_0ur0b0r0s}`
+
+6. RUNTIME EXPLOIT PATH (REMOTE / SERVICE STYLE)
+
+   The binary is also command-injectable:
+   - It builds `gcc ...` using raw `strcat` on argv
+   - Sends it directly to `system()`
+
+   If interacting with a remote runner that has `/flag`, inject shell metacharacters,
+   e.g. `;cat /flag;`.
+
+   To bypass the impossible local check path reliably, spoof `argv[0]` with `exec -a`
+   and use a crafted small file where the size gate skips the decrypt check.
+
+7. VERIFICATION
+
+   - Static decode from pristine zip binary produced a full valid flag string.
+   - Prefix and format match challenge requirement (`BITSCTF{...}`).
+   - Behavior matches reversed routines exactly.
+
+TOOLS USED:
+-----------
+- r2 / radare2 (`afl`, `pdf`, `pdc`)
+- readelf / objdump / strings
+- Python (re-implement hash + decode)
+- shell diff/hash checks (`sha256sum`, `xxd`)
+
+FLAG: BITSCTF{n4n0m1t3s_4nd_s3lf_d3struct_0ur0b0r0s}

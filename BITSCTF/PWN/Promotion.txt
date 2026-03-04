@@ -1,0 +1,95 @@
+===============================================================================
+BITSCTF 2026 - Promotion Writeup
+Category: PWN
+Points: 500
+Author: natitati
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+You just got promoted by your boss! What's the first thing you're doing?
+
+FILES PROVIDED:
+--------------
+- bzImage
+- rootfs.cpio.gz
+- diff.txt
+- run.sh
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   The kernel patch in `diff.txt` adds a custom IDT vector:
+   - `EXC_PROMOTION_VECTOR = 0x81`
+   - handler `asm_exc_promotion`
+
+   The handler logic is the core bug:
+   - pushes/pops `rax`
+   - rewrites saved CS on the interrupt frame with current `%cs`
+   - returns with `iretq`
+
+   Result: `int 0x81` returns to user-controlled RIP, but with kernel CS
+   (`CS=0x10`), so execution continues in ring0 from user memory.
+
+2. FIND WHERE THE FLAG IS
+
+   `run.sh` launches QEMU with:
+   - `-hda /challenge/flag.txt`
+
+   So the flag is exposed as disk device data in-guest, i.e. `/dev/sda`,
+   not as `/flag.txt`.
+
+3. STABLE EXPLOIT STRATEGY
+
+   A direct `commit_creds` chain was unstable due stack/entry faults.
+   The stable approach is simpler:
+   - keep execution in ring0 only long enough to read disk data directly
+   - use ATA PIO port I/O (`in`/`out`) to read sector 0 from primary master
+   - return cleanly to ring3 with `sysretq`
+
+   This avoids fragile kernel-internal call paths entirely.
+
+4. IMPLEMENTATION DETAILS
+
+   The payload does:
+   - `mmap` a fixed user region (`0x444440000000`, RW)
+   - prefault pages to avoid first-touch faults during ring0 stores
+   - set controlled stack in mapped region
+   - trigger `int 0x81`
+
+   In ring0:
+   - `cli`
+   - set `rsp` to fixed mapped stack
+   - issue ATA PIO sequence:
+     - wait `BSY=0` on `0x1f7`
+     - set sector count (`0x1f2 = 1`)
+     - set LBA low/mid/high to 0 (`0x1f3..0x1f5`)
+     - set drive/head (`0x1f6 = 0xe0`)
+     - send READ SECTORS command (`0x1f7 = 0x20`)
+     - wait `DRQ=1`
+     - read 256 words from `0x1f0` into mapped output buffer
+   - return via `sysretq` to user label
+
+   Back in user mode:
+   - `write(1, outbuf, 0x100)` prints the first sector
+   - this contains the flag text
+
+5. LOCAL FIRST, THEN REMOTE
+
+   Local check:
+   - used local harness with dummy disk file
+   - confirmed output: `BITSCTF{LOCAL_DUMMY_FLAG}`
+
+   Remote run:
+   - same payload and launcher
+   - recovered real flag from `/dev/sda` sector output
+
+TOOLS USED:
+-----------
+- objdump / readelf / strings
+- Python (pwntools-style launcher workflow)
+- QEMU (local validation)
+
+FLAG: BITSCTF{pr0m0710n5_4r3_6r347._1f_1_0nly_h4d_4_j0b...}

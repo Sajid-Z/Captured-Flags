@@ -1,0 +1,103 @@
+===============================================================================
+BITSCTF 2026 - Mind The Gap Writeup
+Category: PWN
+Points: 500
+Author: natitati
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Classic tiny pwn binary with a constrained control-flow path.  
+The goal is to turn a small overflow into full code execution.
+
+FILES PROVIDED:
+--------------
+- mind_the_gap
+- libc.so.6
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Fast triage of the binary:
+   - 64-bit ELF
+   - non-PIE
+   - NX enabled
+   - no canary
+   - only useful primitive is `read`
+
+   Main routine behavior:
+   - reserves `0x100` bytes on stack
+   - calls `read(0, rbp-0x100, 0x200)`
+   - exits through `leave; ret`
+
+   So we get immediate stack overwrite of saved `rbp` and return address.
+
+2. EXPLOIT STRATEGY
+
+   A direct ret2libc path is awkward here, so the solve uses:
+   - staged stack pivots into writable memory near `0xc00000`
+   - controlled 1-byte patching of `read@got`
+   - SROP (`rt_sigreturn`) to set a full register context
+   - final `execve("/bin/sh", 0, 0)`
+
+3. IMPORTANT CONSTANTS USED
+
+   From the exploit:
+   - `MAIN_BODY = 0x60013E`
+   - `READ_PLT = 0x600040`
+   - pivot chain addresses: `P2/P3/B4/B5`
+   - `FRAME_BASE = 0xC00008`
+   - `BINSH = 0xC001F0`
+   - `FINAL_RBP = 0x10F`
+
+   `FINAL_RBP` is key because later `lea rax, [rbp-0x100]` becomes `rax = 15`,
+   which is the syscall number for `rt_sigreturn`.
+
+4. STAGED CHAIN
+
+   Stage 1:
+   - overflow with `A*0x100 + p64(P2) + p64(MAIN_BODY)`
+   - enters first pivot frame
+
+   Stage 2 (`build_stage2`):
+   - sets `P2 -> P3 -> MAIN_BODY`
+   - prepares the next controlled re-entry
+
+   Stage 3:
+   - sends one byte `0x8d` to patch low byte of `read@got`
+   - transition to a stable read/syscall path
+
+   Stage 4 (`build_stage4`):
+   - builds next pivots `B4 -> B5 -> FINAL_RBP`
+   - writes a full `SigreturnFrame` in writable memory
+   - places `/bin/sh` at `BINSH`
+   - frame sets:
+     - `rax = 59`
+     - `rdi = BINSH`
+     - `rsi = 0`
+     - `rdx = 0`
+     - `rip = READ_PLT`
+     - `csgsfs = 0x2B000000000033`
+     - `eflags = 0x202`
+
+   Stage 5:
+   - sends one byte `0x8f` (`read@got` low byte patch)
+   - next execution reaches syscall entry with `rax = 15`
+   - kernel performs sigreturn and loads our crafted frame
+
+5. SHELL + FLAG
+
+   After sigreturn, execution becomes:
+   - `execve("/bin/sh", 0, 0)`
+
+   Then send:
+   - `cat /home/ctf/flag.txt`
+
+TOOLS USED:
+-----------
+- checksec / readelf / objdump / gdb
+- Python + pwntools (`SigreturnFrame`)
+
+FLAG: BITSCTF{b53eb90e5f48a19e70149c9306fd5580}
