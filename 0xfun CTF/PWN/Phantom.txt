@@ -1,0 +1,128 @@
+===============================================================================
+0xfun CTF - Phantom Writeup
+Category: PWN (Kernel)
+Points: 750
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Kernel exploitation challenge. A vulnerable kernel module (phantom.ko) is
+loaded in a QEMU VM running Linux 6.6.15 with KASLR, SMEP, and SMAP enabled.
+The goal is to escalate privileges from uid 1000 to root and read /flag.
+
+FILES PROVIDED:
+--------------
+- phantom.gz (archive containing):
+  - bzImage (compressed kernel)
+  - initramfs.cpio.gz (root filesystem)
+  - interface.h (ioctl command definitions)
+  - phantom.ko (vulnerable kernel module)
+  - run.sh (QEMU launch script)
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Extracted phantom.gz to obtain the challenge files. Analyzed run.sh to
+   determine protections: KASLR + SMEP + SMAP enabled, 256MB RAM, kernel
+   6.6.15. The initramfs boots to a uid 1000 shell with /dev/phantom
+   accessible (mode 666). The flag is at /flag (root-only readable).
+
+2. REVERSE ENGINEERING THE KERNEL MODULE
+
+   Disassembled phantom.ko and identified two ioctl commands:
+   - CMD_ALLOC (0x133701): Allocates a 24-byte metadata struct via
+     kmalloc_trace and a physical page via alloc_pages. Fills the page
+     with 0x4141414141414141 pattern. Tracks a "freed" flag.
+   - CMD_FREE  (0x133702): Frees the allocated page via __free_pages
+     and sets the freed flag to 1.
+
+   The module also implements mmap (which checks the freed flag — if the
+   page is already freed, mmap returns -EINVAL) and maps the allocated
+   page to userspace via remap_pfn_range. Critical vulnerability: the
+   alloc→mmap→free sequence is permitted, and after CMD_FREE the
+   userspace mmap mapping persists, creating a Use-After-Free (UAF) on a
+   physical page. The freed page can be reclaimed by kernel allocations
+   while userspace retains R/W access to it.
+
+3. EXPLOITATION STRATEGY: DIRTY PAGETABLE
+
+   Used the Dirty Pagetable technique:
+   a) Pre-allocate upper-level page tables (PGD/PUD/PMD) by touching a
+      page at the spray base address before creating the UAF
+   b) Trigger UAF: CMD_ALLOC → mmap → CMD_FREE
+   c) Spray 512 × 2MB anonymous mappings to force PTE page allocations,
+      reclaiming the freed page as a Page Table Entry (PTE) page
+   d) The UAF mapping now overlaps a PTE page, giving arbitrary control
+      over 512 physical page mappings
+
+4. LOCATING THE PTE AND VMA ALIASING
+
+   Scanned the UAF page for valid PTE entries (present bit set, user-
+   accessible). Used an aliasing test: wrote through one PTE slot and
+   checked if the change appeared through another PTE slot pointing to the
+   same physical page. This identified which spray VMA's page table was
+   captured by the UAF.
+
+5. KASLR BYPASS
+
+   Scanned physical memory for the "Linux version" string at known offsets.
+   The base physical address without KASLR is PFN 0x2200 + offset 0x0A0.
+   Iterated KASLR slots (multiples of 0x200000) until the string was found,
+   revealing the KASLR offset.
+
+6. READING KERNEL DATA STRUCTURES
+
+   With arbitrary physical memory R/W via PTE manipulation:
+   - Read page_offset_base from its known physical address (PFN 0x27BF,
+     offset 0x1F8) to get the direct mapping base
+   - Mapped init_task (phys 0x2A0C4C0 + KASLR) and auto-detected the
+     tasks list_head offset by scanning for non-self-referencing list_heads
+     pointing to the direct mapping region (0xffff888...)
+   - Validated the detected offset by following the pointer and checking
+     that the target task's comm field contained a valid process name
+
+7. CREDENTIAL OVERWRITE
+
+   Walked the task list from init_task through the tasks list_head chain.
+   Found the exploit process (identified by comm name "exploit", set via
+   prctl(PR_SET_NAME)). Read the cred pointer from the task_struct, then:
+   - Zeroed uid/gid/suid/sgid/euid/egid/fsuid/fsgid (32 bytes at cred+4)
+   - Set all capabilities to 0xFFFFFFFFFFFFFFFF (40 bytes at cred+0x28)
+   This grants full root privileges. Opened and read /flag.
+
+8. REMOTE DEPLOYMENT: CODE INJECTION VIA /proc/$$/mem
+
+   The remote environment has NO writable directories (rootfs is read-only,
+   no tmpfs, /dev not writable by uid 1000). Solved this by injecting a
+   stager shellcode into the shell process via /proc/$$/mem:
+
+   a) Read /proc/$$/syscall to find the shell's waitpid return address
+      (0x48ba5a in busybox's wait4 wrapper)
+   b) Set the terminal to raw mode (stty raw -echo)
+   c) Used dd to overwrite the shell's code at the waitpid return address
+      with a stager shellcode (333 bytes)
+   d) When dd exits, the shell resumes execution at the overwritten
+      address, running the stager
+
+   The stager:
+   - Fixes the foreground process group (setpgid + ioctl TIOCSPGRP) to
+     allow reading from the terminal (prevents EIO on tty read)
+   - Creates a memfd via memfd_create()
+   - Reads a 4-byte size header then the exploit binary from stdin
+   - Writes the binary to the memfd
+   - Executes it via execve("/proc/self/fd/3")
+
+   The solve script sends the exploit binary (743KB) over the serial
+   connection after the stager is injected.
+
+TOOLS USED:
+-----------
+- objdump / readelf (kernel module and binary analysis)
+- QEMU (local testing with same kernel/protections)
+- GCC (static compilation of exploit)
+- Python + pwntools (remote deployment and stager assembly)
+- dd + /proc/$$/mem (code injection into read-only filesystem)
+
+FLAG: 0xfun{r34l_k3rn3l_h4ck3rs_d0nt_unzip}

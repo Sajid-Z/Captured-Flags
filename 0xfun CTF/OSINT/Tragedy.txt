@@ -1,0 +1,63 @@
+===============================================================================
+0xFun CTF - Tragedy Writeup
+Category: OSINT
+Difficulty: Medium
+Author: x03e
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+I recent plane fell down, what could of we done?
+Related to challenge MultiVerse.
+
+SOLUTION:
+---------
+
+1. LINK TO MULTIVERSE CONTEXT
+   
+   Since the challenge says it is related to MultiVerse, continue from the same
+   Reddit account used there:
+   - u/Massive-Equipment393
+
+2. FIND THE RELEVANT POST/COMMENT
+   
+   On the user activity feed, there is an aviation-thread comment:
+   - /r/aviation/comments/1oombcc/ups2976_crash_megathread/nn5a64b/
+   
+   The visible message appears harmless:
+   - "Im sorry for all the loss."
+
+3. DETECT HIDDEN PAYLOAD
+   
+   The text contains many invisible Unicode characters embedded between letters.
+   Extracting code points shows a repeating set of:
+   - U+200C
+   - U+200D
+   - U+202C
+   - U+FEFF
+
+4. DECODE STRATEGY
+   
+   Treat each symbol as 2-bit data:
+   - U+200C -> 00
+   - U+200D -> 01
+   - U+202C -> 10
+   - U+FEFF -> 11
+   
+   Then:
+   - Concatenate into a bitstream
+   - Convert to bytes
+   - Decode bytes as UTF-16BE
+
+5. RESULT
+   
+   Decoded plaintext:
+   - 0xfun{UPS_Flight_2976_fall1n_d0wn}
+
+TOOLS USED:
+-----------
+- Redlib (for readable Reddit mirror access)
+- Python (Unicode extraction and decoding)
+- BeautifulSoup (text extraction from HTML)
+
+FLAG: 0xfun{UPS_Flight_2976_fall1n_d0wn}

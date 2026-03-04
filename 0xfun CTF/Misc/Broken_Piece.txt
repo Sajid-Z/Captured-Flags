@@ -1,0 +1,94 @@
+===============================================================================
+0xFun CTF - Broken Piece Writeup
+Category: Misc
+Difficulty: Medium
+Author: x03e
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Anyway to recover the QR code since it seems broken.
+Flag format: 0xfun{}
+
+FILES PROVIDED:
+--------------
+- secret_id.png
+
+SOLUTION:
+---------
+
+1. QUICK TRIAGE
+   
+   Opened the image and inspected all visible clues.
+   It contains two QR-like regions:
+   - Top-right QR covered by a torn tape overlay
+   - Bottom-right QR with a skull logo and cropped edges
+   
+   This strongly suggests one real QR and one decoy QR.
+
+2. TEST STANDARD QR DECODING
+   
+   Tried common decoders directly (full image and manual crops).
+   Result:
+   - Full image: no decode
+   - Bottom-right QR: no decode
+   - Top-right QR: partial detection only
+   
+   This matched the challenge hint that the image itself is misleading.
+
+3. ISOLATE THE REAL QR PANEL
+   
+   Located the top-right white QR panel and cropped it precisely.
+   The crop preserves finder patterns while removing unrelated card art.
+
+4. ESTIMATE QR GEOMETRY
+   
+   Used finder-pattern template matching to estimate:
+   - Finder centers
+   - Module size
+   - Quiet zone offset
+   
+   Finder spacing fit Version 2 geometry (25x25 modules).
+
+5. RECOVER FORMAT INFORMATION
+   
+   Read format bits from the intact top-left format area.
+   Best match gave:
+   - Error correction: M
+   - Mask pattern: 1
+   
+   This removes unmask ambiguity for data extraction.
+
+6. REBUILD DATA CODEWORDS
+   
+   Converted module samples into binary values, then:
+   - Followed QR zig-zag data traversal
+   - Unmasked with mask pattern 1
+   - Packed bits into Version 2 codewords (44 bytes)
+   - Ignored remainder bits as required by the spec
+
+7. APPLY REED-SOLOMON DECODING
+   
+   Ran Reed-Solomon decode for Version 2, EC level M.
+   Swept nearby geometry parameters (small offsets/scale/radius) for
+   robustness.
+   
+   Multiple parameter sets decoded to the same payload:
+   - 0xfun{br0k3n_qr_r3c0v3rd}
+
+8. CONFIRM
+   
+   The decoded payload:
+   - Matches required format `0xfun{}`
+   - Is stable across many nearby geometric configurations
+   
+   So the recovered flag is reliable.
+
+TOOLS USED:
+-----------
+- Python
+- OpenCV (image processing and module sampling)
+- reedsolo (Reed-Solomon decoding)
+- Template matching for finder localization
+
+FLAG: 0xfun{br0k3n_qr_r3c0v3rd}

@@ -1,0 +1,102 @@
+===============================================================================
+0xFun CTF - Pharaoh's Curse Writeup
+Category: Reverse Engineering
+Points: 650
+Author: SwitchCaseAdvocate
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+The pharaoh's tomb holds ancient secrets. Only those who speak the old tongue
+may enter.
+
+flag: 0xfun{}
+
+FILES PROVIDED:
+--------------
+- tomb_guardian
+- sacred_chamber.7z
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+   
+   Started with triage on `tomb_guardian`:
+   - 64-bit stripped PIE ELF
+   - Full RELRO, Canary, NX, PIE
+   - Very limited useful strings
+   
+   Running it with random input always prints `No.`.
+
+2. REVERSE THE FIRST GATE (tomb_guardian)
+   
+   Disassembly shows a small custom VM:
+   - Bytecode stream at `0x4040`
+   - Dispatcher table at `0x4300`
+   - Stack-based ops (push/pop, xor/add/etc), compare, conditional jump
+   
+   The first validation block is a repeated pattern equivalent to:
+   - `input[i] XOR const1 == const2`
+   
+   Solving each pair gives:
+   - `0p3n_s3s4m3`
+
+3. GET THE ARCHIVE PASSWORD
+   
+   Feeding `0p3n_s3s4m3` to `tomb_guardian` prints:
+   - `The sacred chamber awaits: Kh3ops_Pyr4m1d`
+   
+   So `Kh3ops_Pyr4m1d` is the 7z password.
+
+4. EXTRACT SECOND STAGE
+   
+   Extracting `sacred_chamber.7z` with that password reveals:
+   - `hiero_vm`
+   - `challenge.hiero`
+   
+   `hiero_vm` is another validator (Rust binary) that reads the hiero script.
+
+5. REVERSE challenge.hiero LOGIC
+   
+   The script is line-based glyph instructions. The core structure is:
+   - Read/store 27 input bytes into indexed slots
+   - Run 24 arithmetic checks of this form:
+     - load slot `a`
+     - load slot `b`
+     - add
+     - compare with constant `c`
+     - fail if not equal
+   
+   So each check is simply:
+   - `x[a] + x[b] = c`
+
+6. BUILD AND SOLVE THE EQUATIONS
+   
+   Converting glyph constants to integers gives a linear system over the
+   unknown middle part of the flag.
+   
+   Solving the 24 equations yields:
+   - `ph4r40h_vm_1nc3pt10n`
+   
+   Final candidate:
+   - `0xfun{ph4r40h_vm_1nc3pt10n}`
+
+7. VERIFY
+   
+   Running:
+   - `echo '0xfun{ph4r40h_vm_1nc3pt10n}' | ./hiero_vm challenge.hiero`
+   
+   Output:
+   - `The ancient seals accept your offering`
+   
+   This confirms the recovered flag.
+
+TOOLS USED:
+-----------
+- `file`, `checksec`, `strings`
+- `objdump`, `radare2`
+- `7z`
+- Python (VM modeling + linear equation solver)
+
+FLAG: 0xfun{ph4r40h_vm_1nc3pt10n}

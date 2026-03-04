@@ -1,0 +1,59 @@
+===============================================================================
+0xfun CTF 2026 - PrintedParts Writeup
+Category: Forensics
+Points: 250
+Author: x03e
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+A friend of mine 3D printed something interesting.
+Flag Format: 0xfun{}
+
+FILES PROVIDED:
+--------------
+- 3D.gcode
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Received a single file: 3D.gcode (~1.1 million lines).
+   G-code is the standard instruction format for 3D printers and CNC machines.
+   The file contained toolpath commands (G0/G1 moves) with XYZ coordinates.
+   Running `head` and `grep` confirmed the mesh was named "flag.stl",
+   hinting that the 3D-printed shape itself encodes the flag.
+
+2. EXTRACT STRUCTURE
+
+   Parsed the G-code to identify layer boundaries (";LAYER:" comments).
+   Found 773 layers with different segment types:
+   - WALL-OUTER, WALL-INNER, FILL, SKIN, SUPPORT, etc.
+   The outer wall paths define the visible shape of the print.
+
+3. VISUALIZE THE TOOLPATH
+
+   Wrote a Python script using matplotlib to plot all XY coordinates
+   from WALL-OUTER segments across every layer, projecting the entire
+   print onto a single top-down (XY) view.
+
+   This produced an image (all_layers_xy.png) showing the outline of
+   the 3D-printed object as seen from above.
+
+4. READ THE FLAG
+
+   The top-down projection revealed text traced out by the print paths.
+   The text was tilted at an angle, but still readable upon inspection.
+   The printed shape spelled out the flag.
+
+5. VERIFY
+
+   Submitted the flag and it was accepted.
+
+TOOLS USED:
+-----------
+- grep / head (initial file analysis)
+- Python 3 + matplotlib (G-code parsing and visualization)
+
+FLAG: 0xfun{this_monkey_has_a_flag}
