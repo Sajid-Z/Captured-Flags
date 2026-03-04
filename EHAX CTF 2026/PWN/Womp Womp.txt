@@ -1,0 +1,95 @@
+===============================================================================
+EHAX CTF 2026 - Womp Womp Revenge Writeup
+Category: PWN
+Points: 500
+Author: abdullah790
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Hippity hippity the flag now is definitely not your property
+
+nc chall.ehax.in 11111
+
+FILES PROVIDED:
+--------------
+- pwn
+- libc.so.6
+- ld.so
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   The binary exposes a small opcode interface over stdin:
+   - alloc/free/show/edit/stop/diag
+
+   Protections are strong (PIE, NX, Canary, Full RELRO), and seccomp is enabled,
+   so a direct stack overwrite route is not practical.
+
+2. PRIMITIVES FOUND
+
+   The core bugs are:
+   - Use-after-free: freed pointers stay reachable by show/edit
+   - Heap metadata abuse through controllable freed chunks
+   - `diag` info leak
+
+   `show` on a freed large chunk gives an unsorted-bin style leak, which reveals
+   `main_arena` and then libc base.
+
+3. LIBC + GUARD LEAKS
+
+   `diag` prints an address related to thread-local storage (`fs:0x30`).
+   That value is not the guard itself, only where the guard is stored.
+
+   I then leaked the real pointer guard byte-by-byte by repeatedly retargeting
+   a shown pointer to `guard_addr + i` and collecting 8 bytes.
+
+4. HEAP HIJACK TO ARBITRARY POINTER CONTROL
+
+   Largebin manipulation was used to perform controlled writes into global pointer
+   tables (`ptr[]`/`size[]`), then an unsafe-unlink style write made `ptr[1]`
+   point to a fully controlled staging area in `.bss`.
+
+   From there, `edit(1, ...)` became a stable arbitrary-structure writer.
+
+5. FSOP + LONGJMP PIVOT
+
+   Crafted fake structures in `.bss`:
+   - fake `_IO_FILE`
+   - fake wide-data / codecvt / gconv state
+   - fake jump buffer for longjmp path
+
+   Overwrote real `_IO_2_1_stdout_` fields to route execution into that path.
+   Encoded jump-buffer pointers with the leaked guard:
+   - `enc = rol64(raw ^ guard, 0x11)`
+
+6. SECCOMP-AWARE ROP
+
+   Seccomp restrictions required:
+   - `read` only on fd 0
+   - `write` only on fd 1/2
+
+   So the chain does:
+   - `close(0)`
+   - `open("flag", O_RDONLY, 0)`  -> becomes fd 0
+   - `read(0, buf, 0x100)`
+   - `write(1, buf, 0x100)`
+   - `exit(0)`
+
+7. TRIGGER + FLAG
+
+   Final trigger (`show`) enters the patched stdio path, executes longjmp into
+   the ROP chain, and prints the flag.
+
+   Local verification worked first, then remote worked with:
+   - `python3 exploit.py remote chall.ehax.in 11111`
+
+TOOLS USED:
+-----------
+- checksec / readelf / objdump / strings
+- gdb
+- Python 3 exploit script (`PWN/womp_womp_revenge/exploit.py`)
+
+FLAG: EH4X{w0mp_g0t_w0mpp3d_4g41n}

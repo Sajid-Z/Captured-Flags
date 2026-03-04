@@ -1,0 +1,76 @@
+===============================================================================
+EHAX CTF 2026 - Entropic Labyrinth Writeup
+Category: Reverse Engineering
+Points: 498
+Author: Ravager
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+I made my first game today but once i compiled it i lost track of all of it.
+Now it's just full of brainrot and I don't wish to play it anymore ;-;
+Hint: skibidi
+
+FILES PROVIDED:
+--------------
+- game.exe
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Ran `file` on game.exe and identified it as a PE32+ executable.
+   Strings revealed PyInstaller markers (PyMarshal, pyi-python-flag),
+   confirming it was a compiled Python 3.11 application.
+
+2. EXTRACT PYINSTALLER ARCHIVE
+
+   Used pyinstxtractor to unpack the PyInstaller bundle.
+   This yielded 122 files, with `game.pyc` as the main entry point.
+
+3. DECOMPILE THE BYTECODE
+
+   Used pycdc (Decompyle++) to recover partial source from game.pyc.
+   The decompiler choked on two functions due to unsupported opcodes,
+   so full bytecode disassembly via pycdas was used to fill in the gaps.
+
+4. UNDERSTAND THE PROGRAM STRUCTURE
+
+   The game is a pygame maze with walls (called "Ballins") and a player.
+   Key globals and variables identified:
+   - DOCTOR_WHO = '525f234f6c50235a24482644485545275c24596a' (encrypted flag)
+   - skibidi_key = 23 (XOR key, stored as a constant)
+   - Ohio_Skibidi_brainrot_decryption() (decryption function)
+
+5. REVERSE THE DECRYPTION FUNCTION
+
+   From the bytecode disassembly, the decryption logic was straightforward:
+   - Convert the hex string to raw bytes via bytes.fromhex()
+   - XOR each byte with the integer key (skibidi_key = 23)
+   - Join the resulting characters into a string
+
+   Equivalent Python:
+     ''.join(chr(b ^ 23) for b in bytes.fromhex(DOCTOR_WHO))
+
+6. IDENTIFY THE TRIGGER CONDITION
+
+   The flag is only displayed when `reality_drift_detected` is True.
+   This is set when the player reaches coordinates x > 540 and y < 60,
+   i.e., the top-right corner of the maze — the "escape" condition.
+
+7. DECRYPT THE FLAG
+
+   Applied the XOR decryption directly:
+     hex_str = '525f234f6c50235a24482644485545275c24596a'
+     key = 23
+     flag = ''.join(chr(b ^ key) for b in bytes.fromhex(hex_str))
+
+TOOLS USED:
+-----------
+- file / strings (initial recon)
+- pyinstxtractor (PyInstaller extraction)
+- pycdc / pycdas (bytecode decompilation and disassembly)
+- Python (flag decryption)
+
+FLAG: EH4X{G4M3_1S_BR0K3N}

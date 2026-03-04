@@ -1,0 +1,95 @@
+===============================================================================
+EHAX CTF 2026 - pathfinder Writeup
+Category: Reverse Engineering
+Points: 100
+Author: abdullah790
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Are you a pathfinder?
+
+FILES PROVIDED:
+--------------
+- pathfinder (ELF 64-bit, stripped PIE)
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+   
+   Ran `file`, `strings`, and disassembly on the binary.
+   Useful strings immediately showed:
+   - Prompt flow (`[y/n]`, then path input)
+   - Success print `You have what it takes. Flag: %s`
+   - Hardcoded prefix `EHAX{`
+
+2. FIND THE CORE CHECKER
+   
+   The main validator is the routine at `0x1444`.
+   It processes each path character, updates grid coordinates, and rejects on:
+   - Invalid direction character
+   - Out-of-bounds move on a 10x10 grid
+   - Bitmask constraint failure between current/next cells
+   - Final hash mismatch
+
+3. DECODE THE GRID DATA
+   
+   A 100-byte table in `.rodata` (offset `0x2020`) is XOR-obfuscated.
+   Deobfuscation uses helper function `0x11c9` per index:
+   - `decoded[i] = enc[i] ^ f(i)`
+   
+   This recovers the 10x10 grid used during movement checks.
+
+4. RECOVER DIRECTION TABLE
+   
+   The init routine at `0x12ce` fills a 256-entry table (12 bytes per char).
+   Only 4 entries are active (`valid = 1`):
+   - `E` -> `(dx=0,  dy=+1)`
+   - `W` -> `(dx=0,  dy=-1)`
+   - `S` -> `(dx=+1, dy=0)`
+   - `N` -> `(dx=-1, dy=0)`
+   
+   Each entry also contains two mask bytes used in the per-step transition test.
+
+5. FINAL HASH CHECK
+   
+   After reaching destination `(9,9)`, the input is hashed by helper `0x126b`.
+   The binary accepts only if:
+   - `hash(path) == 0x86ba520c`
+
+6. SOLVE THE VALID PATH
+   
+   Reimplemented the full checker in Python, then searched valid moves.
+   Unique accepted path found:
+   - `EESSSWWSSSSSSEEEEEEEENNESS`
+   
+   This path satisfies movement rules and the final hash constant.
+
+7. BUILD PRINTED FLAG
+   
+   Another routine (`0x1602`) converts the accepted path to flag body:
+   - Prefix with `EHAX{`
+   - Run-length encode repeated moves (`%d%c` when count > 1)
+   - Append `}`
+   
+   `EESSSWWSSSSSSEEEEEEEENNESS` -> `2E3S2W6S8E2NE2S`
+   Final flag:
+   `EHAX{2E3S2W6S8E2NE2S}`
+
+8. VERIFY
+   
+   Ran the binary with:
+   - `y`
+   - `EESSSWWSSSSSSEEEEEEEENNESS`
+   
+   Program printed:
+   `You have what it takes. Flag: EHAX{2E3S2W6S8E2NE2S}`
+
+TOOLS USED:
+-----------
+- strings / file / readelf / objdump
+- Python (checker reimplementation + search)
+- Runtime verification by executing the binary
+
+FLAG: EHAX{2E3S2W6S8E2NE2S}

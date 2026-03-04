@@ -1,0 +1,127 @@
+===============================================================================
+EHAX CTF 2026 - SarcAsm Writeup
+Category: PWN
+Points: 500
+Author: abdullah790
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Unsarcastically, introducing the best asm in market: SarcAsm
+
+nc 20.244.7.184 9999
+
+FILES PROVIDED:
+--------------
+- sarcasm (ELF 64-bit, PIE, NX, Canary, Full RELRO)
+- libc.so.6
+- ld-linux-x86-64.so.2
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   The binary is a custom VM with:
+   - bytecode runner
+   - assembler (`--asm`)
+   - disassembler (`--disasm`)
+
+   Running `strings` initially showed only:
+   PUSH, SWAP, DROP, NEWBUF, READ, SLICE, PRINTB, WRITEBUF,
+   GLOAD, GSTORE, BUILTIN, CALL, HALT.
+
+   But dumping `.rodata` directly revealed hidden opcodes too:
+   DUP, ADD, SUB, XOR, SHL, SHR, AND, LEN, JMP, JZ, GC.
+
+2. REVERSE THE VM EXECUTION MODEL
+
+   Main interpreter is `fcn.00005330` with a 97-case opcode switch.
+
+   Important runtime details:
+   - Values are tagged:
+     - integers => `(n << 1) | 1` (LSB = 1)
+     - heap pointers => aligned pointers (LSB = 0)
+   - Object types:
+     - type 1: buffer
+     - type 2: slice
+     - type 3: callable
+   - `CALL` expects a type-3 object and executes function pointer:
+     `call qword ptr [[obj+0x18] + 8]`
+
+3. IDENTIFY A USEFUL EXEC PRIMITIVE
+
+   A hidden function at `0x3000` does:
+   `execve("/bin/sh", ["/bin/sh", NULL], NULL)`.
+
+   Because binary is PIE, we cannot hardcode this address directly.
+   We need one runtime code pointer leak to derive PIE base.
+
+4. FIND THE VULNERABILITY (GC DOUBLE-FREE)
+
+   `SLICE 0 0` creates a slice that reuses the same backing payload pointer
+   as the original buffer.
+
+   GC sweep (`fcn.00003bd0`) frees payloads for both type-1 and type-2 objects
+   via `fcn.000039f0`, but does not prevent freeing the same backing chunk twice.
+
+   So if both a buffer and a zero-length slice to that buffer become unreachable,
+   `GC` inserts the same payload chunk twice into allocator freelists.
+
+   Result: next two allocations of that size can overlap (same memory returned twice).
+
+5. BUILD THE EXPLOIT CHAIN
+
+   Core idea:
+   - Double-free one 0x20 payload chunk.
+   - Reallocate it as:
+     1) a normal buffer payload
+     2) a BUILTIN callable payload
+   - Use buffer writes to overwrite callable function pointer.
+
+   Exploit bytecode logic:
+
+   a) Create double-free condition
+      - `NEWBUF 32` -> g0
+      - `GLOAD 0 ; SLICE 0 0` -> g1
+      - `PUSH 0 ; GSTORE 0`
+      - `PUSH 0 ; GSTORE 1`
+      - `GC`
+
+   b) Reallocate overlapping chunks
+      - `NEWBUF 32` -> g2
+      - `BUILTIN 1` -> g3
+
+   c) Leak callable function pointer
+      - `GLOAD 2 ; WRITEBUF 16 1` (write marker byte)
+      - `GLOAD 2 ; PRINTB` (prints overlapped bytes)
+      - First 8 bytes are pointer to builtin-1 handler (`~0x2ee0` offset in PIE)
+
+   d) Compute shell function pointer
+      - `shell = leaked_ptr - 0x2ee0 + 0x3000`
+
+   e) Overwrite and execute
+      - `GLOAD 2 ; WRITEBUF 0 8` (write `p64(shell)`)
+      - `GLOAD 3 ; CALL 0`
+      - VM jumps to shell function and spawns `/bin/sh`
+
+6. REMOTE EXPLOIT
+
+   Default mode accepts blob format:
+   `[u32 code_len | code | runtime_data]`
+
+   Runtime input order used:
+   - 1 byte: marker for first `WRITEBUF`
+   - 8 bytes: new function pointer (`p64(shell_addr)`)
+   - shell command: `cat flag* ...`
+
+   This gives command execution on remote service and prints the flag.
+
+TOOLS USED:
+-----------
+- radare2 (disassembly and VM reversing)
+- xxd / strings / readelf
+- Python 3 (socket exploit)
+- netcat (service interaction)
+
+FLAG: EH4X{l00ks_l1k3_1_n33d_4_s4rc4st1c_tut0r14l}

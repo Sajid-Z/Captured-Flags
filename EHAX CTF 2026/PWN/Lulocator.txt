@@ -1,0 +1,97 @@
+===============================================================================
+EHAX CTF 2026 - lulocator Writeup
+Category: PWN
+Points: 500
+Author: abdullah790
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Who needs that buggy malloc? Made my own completely safe lulocator.
+
+nc chall.ehax.in 40137
+
+FILES PROVIDED:
+--------------
+- lulocator (ELF 64-bit, stripped, No PIE)
+- libc.so.6 (Ubuntu GLIBC 2.35)
+- Makefile
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Ran file/checksec on the binary.
+   Key protections: No RELRO, No canary, NX enabled, No PIE.
+   The binary implements a custom heap allocator with a menu interface:
+   1) new, 2) write, 3) delete, 4) info, 5) set_runner, 6) run, 7) quit.
+
+2. REVERSE ENGINEER THE ALLOCATOR
+
+   The allocator uses mmap'd arena (256KB) with a circular doubly-linked
+   free list and a self-referencing sentinel node at fixed address 0x404850.
+   Chunk layout: 8-byte header (size | in_use_bit), then user data.
+   Minimum chunk size: 0x28. Free chunks reuse user data for fwd/bk pointers.
+   Unlink has an integrity check: node->next->prev == node && node->prev->next == node.
+
+3. REVERSE ENGINEER THE SLOT OBJECT
+
+   Each slot is an inline struct allocated by the custom allocator:
+   - +0x00: field0 (unused)
+   - +0x08: field1 (unused)
+   - +0x10: printer function pointer (default: mail_print @ 0x401608)
+   - +0x18: output stream (default: stdout FILE*)
+   - +0x20: buf_size
+   - +0x28: inline data buffer (buf_size bytes)
+
+   cmd_run calls: runner->printer(runner->buf) — indirect call through +0x10.
+
+4. IDENTIFY THE VULNERABILITY
+
+   In cmd_write, the length check is:
+       if (slot->buf_size + 0x18 < len) { puts("too long"); return; }
+   But the buffer is only buf_size bytes. This allows writing up to
+   buf_size + 0x18 bytes — a 24-byte (0x18) heap overflow.
+
+5. LEAK LIBC
+
+   cmd_info prints: "[info] addr=0x%lx out=0x%lx len=%lu"
+   The out field is the stdout FILE* (_IO_2_1_stdout_ in libc).
+   Calling info on any slot leaks a libc address directly.
+   Computed: libc_base = leaked_stdout - 0x21b780, system = libc_base + 0x50d70.
+
+6. CORRUPT CHUNK SIZE VIA OVERFLOW
+
+   Allocated 3 adjacent slots (0, 1, 2) each with size=0x10 (chunk=0x40).
+   Freed slot 1 — it goes on the free list with fwd=bk=0x404850 (sentinel).
+   Overflowed from slot 0's buffer into the freed chunk 1's header:
+   - Corrupted size from 0x40 to 0x80
+   - Preserved fwd/bk as sentinel (passes the unlink integrity check)
+
+7. ALLOCATE OVERLAPPING CHUNK
+
+   Allocated a new slot with size=0x48 (needs chunk size 0x80).
+   The allocator takes the corrupted 0x80 free chunk, which now overlaps
+   entirely with slot 2's metadata and data buffer.
+
+8. OVERWRITE FUNCTION POINTER
+
+   Wrote through the overlapping allocation to forge slot 2's metadata:
+   - Set printer (+0x10) to system()
+   - Set data buffer (+0x28) to "/bin/sh\0"
+   This turns slot 2 into a shell trigger.
+
+9. TRIGGER SHELL
+
+   Called set_runner(2) then run().
+   The binary executes: runner->printer(runner->buf) = system("/bin/sh").
+   Got a shell, ran cat flag* to retrieve the flag.
+
+TOOLS USED:
+-----------
+- objdump / strings / checksec (binary analysis)
+- Python 3 + pwntools (exploit scripting)
+- readelf (GOT/section layout)
+
+FLAG: EH4X{unf0rtun4t3ly_th3_lul_1s_0n_m3}

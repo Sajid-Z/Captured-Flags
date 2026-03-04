@@ -1,0 +1,107 @@
+===============================================================================
+EHAX CTF 2026 - Heist v1 Writeup
+Category: Blockchain
+Points: 500
+Author: abdullah790
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+The government has released a new vault and now we can add proposals too,
+what?? Drain the VAULT.
+
+nc 135.235.193.111 1337
+
+FILES PROVIDED:
+--------------
+- Vault.sol (Solidity smart contract)
+- Governance.sol (Solidity smart contract)
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Connected to the challenge server via netcat.
+   Server spawns a private blockchain instance and provides:
+   - RPC URL
+   - Vault contract address
+   - Governance contract address
+   - Player private key
+   Win condition: `Vault.isSolved()` returns true (vault balance == 0).
+
+2. ANALYZE THE CONTRACTS
+
+   Vault.sol storage layout:
+   - Slot 0: `paused` (bool) + `fee` (uint248), packed
+   - Slot 1: `admin` (address)
+   - Slot 2: `governance` (address)
+
+   Key functions:
+   - `execute(bytes data)` — does `delegatecall` to `governance` with `data`
+   - `withdraw()` — transfers entire balance, requires `!paused` and `msg.sender == admin`
+   - `setGovernance(address _g)` — sets governance address, NO ACCESS CONTROL
+
+   Governance.sol:
+   - Single function `setProposal(uint256 x)` that writes to `proposalCount` (slot 0)
+
+3. IDENTIFY THE VULNERABILITY
+
+   The bug is a classic **delegatecall storage collision**.
+
+   `execute()` performs `governance.delegatecall(data)`, which runs the
+   governance contract's code in the context of the Vault's storage.
+
+   Crucially, `setGovernance()` has NO access control — anyone can point
+   it to an arbitrary contract. A malicious contract called via delegatecall
+   can overwrite any storage slot in the Vault.
+
+4. CRAFT THE ATTACK CONTRACT
+
+   Deployed a minimal contract via raw EVM bytecode that, when executed
+   via delegatecall, performs:
+   - `SSTORE(0, 0)` — clears slot 0, setting `paused = false`
+   - `SSTORE(1, CALLER)` — writes `msg.sender` to slot 1, setting `admin` to player
+
+   Runtime bytecode (10 bytes):
+   `6000600055336001550000`
+
+   Breakdown:
+   - `60 00` PUSH1 0x00 (value)
+   - `60 00` PUSH1 0x00 (slot)
+   - `55`    SSTORE       -> paused = false
+   - `33`    CALLER       -> push msg.sender
+   - `60 01` PUSH1 0x01 (slot)
+   - `55`    SSTORE       -> admin = caller
+   - `00`    STOP
+
+5. EXECUTE THE ATTACK
+
+   Four transactions in sequence:
+
+   a) Deploy the attack contract
+      -> Deployed at 0x8464135c8F25Da09e49BC8782676a84730C318bC
+
+   b) `Vault.setGovernance(attack_contract)`
+      -> Points governance to our malicious contract
+
+   c) `Vault.execute(0xc0129d43)`
+      -> delegatecall to attack contract overwrites Vault storage:
+         paused = false, admin = player address
+
+   d) `Vault.withdraw()`
+      -> Drains all 5 ETH from the Vault
+
+6. VERIFY
+
+   Called `Vault.isSolved()` — returned `true`.
+   Sent option "1" (Check solved) to the nc server.
+   Server returned the flag.
+
+TOOLS USED:
+-----------
+- Python 3 + web3.py (transaction crafting and deployment)
+- curl (RPC connectivity testing)
+- netcat (challenge server interaction)
+
+FLAG: EH4X{c4ll1ng_m4d3_s000_e45y_th4t_my_m0m_d03snt_c4ll_m3}

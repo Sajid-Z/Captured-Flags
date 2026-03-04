@@ -1,0 +1,93 @@
+===============================================================================
+EHAX CTF 2026 - Kaje Writeup
+Category: Reverse Engineering
+Points: 500
+Author: Anonimbus
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+I don't know what is the intended solution anymore.
+
+FILES PROVIDED:
+--------------
+- kaje (ELF 64-bit Linux binary)
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Started by identifying the file type and basic metadata.
+   `file` and `strings` showed:
+   - 64-bit PIE executable, not stripped
+   - interesting strings: `/.dockerenv`, `/proc/self/mountinfo`, `overlay`
+   - internal functions: `gen_entropy`, `gen_keystream`
+
+   This strongly suggested environment-based branching.
+
+2. STATIC ANALYSIS OF MAIN LOGIC
+
+   Disassembled the binary with `objdump`.
+   `main` does the following:
+   - calls `gen_entropy()` to get a 64-bit seed
+   - calls `gen_keystream()` to produce 32 bytes
+   - XORs that keystream with a 32-byte constant in `.rodata`
+   - prints the result
+
+   So the printed text depends entirely on the runtime seed branch.
+
+3. UNDERSTAND `gen_entropy()`
+
+   `gen_entropy()` builds the seed from environment checks:
+   - If `/.dockerenv` exists:
+     - base constant = `0xcd9aadd8d9c9a989`
+   - Otherwise:
+     - base constant = `0x1337133713371337`
+
+   Then it opens `/proc/self/mountinfo` and scans lines for `overlay`.
+   If found, it XORs the base with:
+   - `0xabcdef1234567890`
+
+   Finally it applies a MurmurHash-style `fmix64` transform and returns it.
+
+4. REBUILD `gen_keystream()`
+
+   `gen_keystream()` generates 32 bytes:
+   - For each index `i` from 0 to 31:
+     - `state = fmix64(state + i)`
+     - output byte = low byte of `state`
+
+   The final plaintext is:
+   - `plaintext[i] = ciphertext[i] XOR keystream[i]`
+
+5. WHY DIRECT EXECUTION LOOKED LIKE GARBAGE
+
+   Running `./kaje` directly in my local setup printed non-printable bytes.
+   That means my runtime branch selected a wrong seed combination.
+
+   Since there are two checks (`dockerenv` and `overlay`), there are four
+   possible seeds. I brute-tested all four branch combinations in Python.
+
+6. RECOVER THE CORRECT BRANCH
+
+   Only one combination produced readable flag text:
+   - `dockerenv = true`
+   - `overlay = true`
+
+   Decrypting with that branch gave a valid EH4X flag string.
+
+7. VERIFY
+
+   The decrypted output matches CTF flag format and challenge context.
+   Other branches produce random-looking binary output, confirming this is the
+   intended path.
+
+TOOLS USED:
+-----------
+- file
+- strings
+- objdump
+- python3 (quick decryption helper)
+
+FLAG: EH4X{dUnn0_wh4tt_1z_1nt3NTenD3d}

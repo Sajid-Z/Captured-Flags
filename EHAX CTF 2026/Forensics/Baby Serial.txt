@@ -1,0 +1,75 @@
+===============================================================================
+EHAX CTF 2026 - baby serial Writeup
+Category: Forensics
+Points: 499
+Author: Anonimbus
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Joe was trying to sniff the data over a serial communication.
+Question: Was he successful?
+
+FILES PROVIDED:
+--------------
+- babyserial.sal
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+   
+   Opened `babyserial.sal` and inspected its contents.
+   It is a Saleae Logic 2 capture archive containing:
+   - `meta.json`
+   - `digital-0.bin` .. `digital-7.bin`
+   
+   Only `digital-0.bin` had real signal data; channels 1-7 were effectively empty.
+
+2. IDENTIFY SIGNAL CHARACTERISTICS
+   
+   `meta.json` showed:
+   - Digital capture
+   - 1 MHz sample rate
+   - No preconfigured analyzer
+   
+   So the UART bytes had to be reconstructed directly from raw transitions.
+
+3. PARSE RAW TRANSITIONS
+   
+   Decoded `digital-0.bin` transition stream and recovered edge timing deltas.
+   Initial UART decoding gave partially readable output with heavy corruption.
+   
+   The stream still clearly contained base64-like text and PNG markers
+   (`iVBOR...` and `...JRU5ErkJggg==`), which confirmed that useful data was present.
+
+4. FIND THE CORRUPTION SOURCE
+   
+   Repeated garbage appeared at periodic intervals.
+   Investigation showed embedded 26-byte metadata blocks mixed into the stream.
+   
+   Removing only 20 obvious blocks improved output, but not fully.
+   Expanding detection found and removed all 41 metadata blocks.
+
+5. RECOVER CLEAN UART PAYLOAD
+   
+   After removing all 41 blocks:
+   - UART output became fully clean base64 text (100% valid charset)
+   - Start and end PNG base64 markers were intact
+   
+   Decoding the recovered base64 produced a valid PNG image.
+
+6. EXTRACT FLAG
+   
+   Viewing the recovered image revealed the flag text:
+   `EH4X{baby_U4rt}`
+   
+   Therefore Joe was successful in sniffing the serial data.
+
+TOOLS USED:
+-----------
+- `file`, `unzip`, `xxd`, `strings`
+- Python (custom parser/decoder for Saleae data + UART reconstruction)
+- Image verification tools (`file`, `identify`)
+
+FLAG: EH4X{baby_U4rt}

@@ -1,0 +1,88 @@
+===============================================================================
+EHAX CTF 2026 - Power Leak Writeup
+Category: Forensics
+Points: 500
+Author: tanishfr
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Power reveals the secret.
+Flag format: EHAX{SHA256(secret)}
+
+FILES PROVIDED:
+--------------
+- power_traces.csv
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+   
+   Loaded the CSV and inspected its structure.
+   The dataset contains 60,000 measurements with columns:
+   - position
+   - guess
+   - trace_num
+   - sample
+   - power_mW
+   
+   Domain sizes:
+   - position: 0..5 (6 secret digits)
+   - guess: 0..9
+   - trace_num: 0..19
+   - sample: 0..49
+
+2. FIND THE LEAKAGE WINDOW
+   
+   Measured discrimination strength per sample by comparing guess-wise power
+   separation across all positions.
+   
+   Result:
+   - sample 21 is the strongest leak point
+   - sample 20 is the second strongest
+   
+   This indicates the secret-dependent operation happens around samples 20-21.
+
+3. EXTRACT SECRET DIGITS
+   
+   For each position, computed mean power at sample 21 for guesses 0..9 and
+   selected the strongest outlier guess.
+   
+   Recovered digits:
+   - position 0 -> 7
+   - position 1 -> 9
+   - position 2 -> 2
+   - position 3 -> 9
+   - position 4 -> 6
+   - position 5 -> 3
+   
+   Secret:
+   792963
+
+4. CONFIDENCE CHECKS
+   
+   Cross-checked with:
+   - sample 20
+   - average over samples 20-21
+   - bootstrap resampling on trace means
+   
+   All major checks kept 792963 as top candidate (with a minor ambiguity only on
+   the last digit in weaker models).
+
+5. BUILD FINAL FLAG
+   
+   Challenge format requires SHA-256 of the secret string:
+   SHA256("792963")
+   = 5bec84ad039e23fcd51d331e662e27be15542ca83fd8ef4d6c5e5a8ad614a54d
+   
+   Final flag:
+   EHAX{5bec84ad039e23fcd51d331e662e27be15542ca83fd8ef4d6c5e5a8ad614a54d}
+
+TOOLS USED:
+-----------
+- Python (pandas)
+- basic statistical checks (ANOVA/t-tests/bootstrap)
+- shell utilities
+
+FLAG: EHAX{5bec84ad039e23fcd51d331e662e27be15542ca83fd8ef4d6c5e5a8ad614a54d}

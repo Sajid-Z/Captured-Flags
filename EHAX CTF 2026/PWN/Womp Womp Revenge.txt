@@ -1,0 +1,107 @@
+===============================================================================
+EHAX CTF 2026 - Womp Womp Writeup
+Category: PWN
+Points: 498
+Author: abdullah790
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Hippity hoppity the flag is not your property
+
+nc 20.244.7.184 1337
+
+FILES PROVIDED:
+--------------
+- challenge (ELF 64-bit, PIE, NX, Canary, Full RELRO)
+- libcoreio.so
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Checked protections and symbols first:
+   - PIE + Canary + NX + Full RELRO enabled
+   - Binary is not stripped
+   - `challenge` loads local `./libcoreio.so` via RPATH
+
+   Program flow in `main` is fixed (no loop):
+   - `submit_note()`
+   - `review_note()`
+   - `finalize_entry()`
+
+2. FIND THE BUGS
+
+   `submit_note`:
+   - reads 0x40 bytes into stack buffer
+   - writes back 0x58 bytes from same buffer
+   - leaks extra 0x18 bytes of stack data
+
+   `review_note`:
+   - reads 0x20 bytes into stack buffer
+   - writes back 0x30 bytes
+   - leaks 0x10 bytes of stack data
+
+   `finalize_entry`:
+   - reads 0x190 bytes into buffer starting at `[rbp-0x48]`
+   - stack frame size is only 0x50
+   - controllable stack overflow with canary check at function end
+
+3. ANALYZE THE SHARED LIBRARY TARGET
+
+   `libcoreio.so` exports `emit_report`.
+   It prints flag only if three 64-bit arguments match:
+   - `0xdeadbeefdeadbeef`
+   - `0xcafebabecafebabe`
+   - `0xd00df00dd00df00d`
+
+   Otherwise it prints `Invalid request.` and exits.
+
+4. LEAK PRIMITIVES USED
+
+   From `review_note` 0x30-byte leak:
+   - bytes `[0x20:0x28]` leak a return pointer (`finalize_note`) -> PIE base
+   - bytes `[0x28:0x30]` leak function canary
+
+   From `submit_note` 0x58-byte leak:
+   - bytes `[0x50:0x58]` leak `main` frame RBP
+   - used later as a safe real stack anchor for stage-2 execution
+
+5. ROP STRATEGY
+
+   The main binary has no simple `pop rdi; ret` gadget, so I used `__libc_csu_init`
+   for controlled function calls (ret2csu).
+
+   Stage-1 chain in `finalize_entry` overflow:
+   - `write(1, &emit_report@got, 8)` -> leak resolved runtime address of `emit_report`
+   - `read(0, stage2_stack, 0x30)` -> receive second-stage stack frame
+   - pivot with `pop rbp; ret` + `leave; ret` into that stage-2 stack
+
+   Stage-2:
+   - set `rbp` to leaked `main` frame pointer (valid stack memory)
+   - return to `emit_report + 0xb6` (just after argument checks)
+   - this reaches the flag-open/read/write path directly
+
+6. IMPLEMENTATION
+
+   Wrote exploit script:
+   - `PWN/womp_womp/exploit.py`
+   - pure Python socket/process helpers (no pwntools dependency)
+   - supports local and remote modes
+
+   Remote run:
+   - `python3 exploit.py remote 20.244.7.184 1337`
+
+7. VERIFY
+
+   Exploit worked locally with test `flag.txt`, then against remote service.
+   Remote output returned the challenge flag.
+
+TOOLS USED:
+-----------
+- checksec / readelf / objdump / strings
+- Python 3 (manual exploit script)
+- netcat (service endpoint verification)
+
+FLAG: EH4X{r0pp3d_th3_w0mp3d}

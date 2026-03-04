@@ -1,0 +1,88 @@
+===============================================================================
+EHAX CTF 2026 - I Guess Bro Writeup
+Category: Reverse Engineering
+Points: 500
+Author: benzo
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+meh yet another crackme challenge.....
+
+FILES PROVIDED:
+--------------
+- chall (ELF 64-bit, RISC-V, statically linked, stripped)
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+   
+   Ran `file`, `strings`, and quick execution tests.
+   The binary is RISC-V, so it was executed with:
+   - `qemu-riscv64 ./chall`
+   
+   Prompt flow:
+   - Banner + "Can you guess the flag?"
+   - Input prompt
+   - Success/failed messages
+
+2. LOCATE MAIN VALIDATION FLOW
+   
+   In the main path (`0x1037e`), input is read, newline is stripped,
+   and length is checked.
+   
+   Required length:
+   - `35` bytes (checked at `0x103bc` / `0x103c0`)
+
+3. IDENTIFY THE REAL CHECKER
+   
+   Main checker function is `0x10732`. It chains multiple gates:
+   - Two anti-decoy checks (reject fake strings)
+   - Byte-decoding comparison check (`0x105cc`)
+   - Structural/math check (`0x10622`)
+   - Final hash check (`0x10700`)
+
+4. DECODE THE EXPECTED 35-BYTE INPUT
+   
+   Function `0x105cc` decodes an embedded 35-byte blob using:
+   - `decoded[i] = blob[i] ^ (i * 7) ^ 0xA5`
+   
+   Then it compares the decoded bytes with user input.
+   Decoding the blob recovers:
+   - `EH4X{y0u_gu3ss3d_th4t_r1sc_cr4ckm3}`
+
+5. STRUCTURAL + MATH CHECKS
+   
+   Function `0x10622` enforces:
+   - Prefix chars: `E H 4 X {`
+   - Last char: `}`
+   - Sum of all 35 bytes = `3243`
+   - Product constraint on positions `[5,10,15,20,25,30]`
+     modulo `1,000,000,007` equals `0x1fb53791`
+   
+   The recovered candidate satisfies all constraints.
+
+6. FINAL HASH VERIFICATION
+   
+   Function `0x10700` computes a custom 64-bit rolling hash
+   (seed `0xdeadbeef`, mixer at `0x10516` / wrapper `0x10574`)
+   over 35 bytes and compares to:
+   - `0x81cf06f4a08cb5ef`
+   
+   The recovered flag hash matches this constant exactly.
+
+7. VERIFY
+   
+   Running the binary with recovered input prints:
+   - `🎉 Correct! You guessed it!`
+   - `Flag: EH4X{y0u_gu3ss3d_th4t_r1sc_cr4ckm3}`
+
+TOOLS USED:
+-----------
+- qemu-riscv64
+- strings / file / readelf
+- radare2 (RISC-V disassembly)
+- Python (decoder + check reproduction)
+
+FLAG: EH4X{y0u_gu3ss3d_th4t_r1sc_cr4ckm3}
