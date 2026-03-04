@@ -1,0 +1,92 @@
+===============================================================================
+BITSCTF - Recursion Vault Writeup
+Category: Blockchain
+Points: 500
+Author: Aur0r4
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Take all my money, I am very very rich hehe.
+We are given a Sui Move vault contract and a remote evaluator. The goal is to
+submit `exploit.move` and drain the vault enough for `check_exploit` to return
+true.
+
+FILES PROVIDED:
+--------------
+- HereComesTheMoneyyy.zip
+  - chall/Move.toml
+  - chall/sources/vault.move
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Extracted the zip and reviewed `chall/sources/vault.move`.
+   Important routines:
+   - `flash_loan`
+   - `repay_loan`
+   - `check_exploit`
+   - `reserves`
+
+   Remote service protocol:
+   - send source size
+   - send full `exploit.move`
+   - server compiles/tests with `sui move test`
+
+2. VULNERABILITY IDENTIFICATION
+
+   The core bug is in flash-loan accounting:
+   - `flash_loan` transfers coins out of vault reserves and returns a receipt
+   - receipt type `FlashLoanReceipt` has `drop`
+   - no state is stored in vault to enforce repayment
+
+   Because the receipt is droppable, attacker can borrow and never call
+   `repay_loan`. The contract cannot force repayment.
+
+3. EXPLOIT STRATEGY
+
+   In `solve`:
+   - read total vault reserves
+   - request flash loan for full reserves
+   - transfer borrowed coins to attacker address
+   - ignore/drop receipt
+
+   This leaves vault reserves near zero in one call, so stolen amount crosses
+   the win threshold checked by `check_exploit`.
+
+4. EXPLOIT IMPLEMENTATION
+
+   Minimal exploit module:
+
+   module solution::exploit {
+       use challenge::vault::{Self, Vault};
+       use sui::clock::Clock;
+       use sui::tx_context::{Self, TxContext};
+       use sui::transfer;
+
+       public fun solve(vault: &mut Vault, _clock: &Clock, ctx: &mut TxContext) {
+           let amount = vault::reserves(vault);
+           let (coins, _receipt) = vault::flash_loan(vault, amount, ctx);
+           transfer::public_transfer(coins, tx_context::sender(ctx));
+       }
+   }
+
+5. REMOTE SUBMISSION
+
+   Submitted the module to:
+   - `chals.bitskrieg.in:43306`
+
+   Server response confirmed:
+   - source accepted
+   - exploit executed
+   - vault drained
+   - flag printed
+
+TOOLS USED:
+-----------
+- unzip / sed / rg
+- netcat + Python sockets (for reliable staged submission)
+
+FLAG: BITSCTF{3f04556488459e3d4ef540b4f99a722d}

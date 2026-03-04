@@ -1,0 +1,105 @@
+===============================================================================
+BITSCTF 2026 - Bank Heist Writeup
+Category: Misc
+Points: 497
+Author: ZeroTrust Bank
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Our sources have intercepted the source code for ZeroTrust Bank's high-speed
+lending protocol.
+
+FILES PROVIDED:
+---------------
+- bank-heist.tar.gz
+  - server/ (challenge harness)
+  - program/ (bank smart contract)
+  - framework/ (sol-ctf framework wrapper)
+  - challenge/bank_heist.so (deployed bank program)
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Read `server/src/main.rs` and confirmed the flow:
+   - We upload our own solve program (`input_program()`).
+   - Server prints bank program pubkey and user pubkey.
+   - Server reads exactly 2 instructions from us, both targeting our solve
+     program id.
+   - If final bank vault balance is `< 1_000_000`, flag is printed.
+
+2. BANK LOGIC REVIEW
+
+   In `program/src/processor.rs`, the loan path is:
+   - `OpenAccount`
+   - `VerifyKYC { proof }`
+   - `RequestLoan { amount }`
+
+   `RequestLoan` transfers lamports from bank PDA to user, then calls
+   `verify_repayment()`.
+
+3. CORE BUG
+
+   `verify_repayment()` only inspects the *next instruction bytes* from
+   `SysvarInstructions`:
+   - checks `discriminant == 2` (system transfer layout)
+   - checks `amount >= expected_amount`
+   - checks destination account is bank PDA
+
+   But it never verifies that:
+   - the next instruction is actually the System Program,
+   - the transfer really executes,
+   - the source account has funds/signature.
+
+   So a fake instruction payload can satisfy repayment checks without returning
+   any lamports.
+
+4. EXPLOIT PLAN
+
+   Use two top-level instructions (required by server):
+
+   Instruction #1 (to our solve program):
+   - CPI call `OpenAccount`
+   - Compute valid KYC proof from `SysvarS1otHashes` and CPI `VerifyKYC`
+   - CPI call `RequestLoan { amount }`
+
+   Instruction #2 (also to our solve program):
+   - No-op code path in our program
+   - Raw data forged as `[u32=2 || u64=loan_amount]`
+   - Account metas forged so account index 1 is bank vault
+
+   During `RequestLoan`, bank program reads instruction #2 from sysvar, accepts
+   it as "repayment", and transaction succeeds with borrowed funds kept by user.
+
+5. IMPORTANT EDGE CASE
+
+   Borrowing `999_500_000` left `500_000` in bank vault, but local simulation
+   rolled back with rent-exemption failure on the bank system account.
+
+   Fixed by borrowing `999_100_000`, leaving `900_000`:
+   - still below challenge threshold (`< 1_000_000`)
+   - transaction remains valid
+
+6. AUTOMATION
+
+   Final files used:
+   - `Misc/Bank Heist/bank-heist/solve/src/lib.rs` (attacker SBF program)
+   - `Misc/Bank Heist/bank-heist/solve/exploit.py` (socket driver)
+
+   Script actions:
+   - upload `solve.so`
+   - parse printed `program:` and `user:`
+   - derive `bank_vault = PDA(["BANK"], bank_program)`
+   - derive `user_pda = PDA(["user", user], bank_program)`
+   - send crafted instruction pair
+   - print returned flag
+
+TOOLS USED:
+-----------
+- Rust + `cargo build-sbf`
+- Python 3 socket script
+- Static source review (`server/src/main.rs`, `program/src/processor.rs`)
+
+FLAG: BITSCTF{8ANk_h3157_1n51D3_A_8L0cK_ChA1n_15_cRa2Y}

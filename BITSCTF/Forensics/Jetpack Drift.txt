@@ -1,0 +1,86 @@
+===============================================================================
+BITSCTF 2026 - Jetpack Drift Writeup
+Category: Forensics
+Points: 379
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+The download failed, but the investigation didn't. Before vanishing, a
+researcher captured the raw exchange between a broken server and a nosy client.
+Sift through the packets to recover what was lost.
+
+FILES PROVIDED:
+--------------
+- chall.pcap
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Inspected the capture with `capinfos` and `tshark`.
+   Key findings:
+   - Internal HTTP traffic to `storagejetpack.in` (`172.18.0.10:80`)
+   - Suspicious transfer: `GET /send-chunks.php`
+   - Useful leaked files: `/encryption.py` and `/database.sql`
+
+2. EXTRACT LEAKED ARTIFACTS
+
+   Exported HTTP objects from the PCAP.
+   The file `encryption.py` reveals the encryption logic:
+   - `CHUNK_SIZE = 12800`
+   - `initial_key = sha256(password)`
+   - For each plaintext chunk:
+     - `encrypted = AES-CTR(chunk, key)`
+     - `key = sha256(chunk)` for the next chunk
+   - Each transferred unit is wrapped as:
+     - `NXTCHNKHASH:<next_encrypted_chunk_sha256>DATA:<ciphertext>`
+
+   `database.sql` gives candidate credentials, including:
+   - `tyler13bradley : 1VL7p6Rcli8mxgkh`
+
+3. REBUILD THE BROKEN DOWNLOAD
+
+   Followed raw TCP stream for `/send-chunks.php` and parsed HTTP chunked body.
+   Reconstructed 10 encrypted units total.
+   Observed:
+   - 9 chunks of 12800 bytes ciphertext
+   - final chunk of 7034 bytes ciphertext
+   - each unit starts with `NXTCHNKHASH:...DATA:`
+
+4. REORDER CHUNKS USING THE HASH CHAIN
+
+   Capture order is not the original file order.
+   Recovered true order by:
+   - computing `sha256(ciphertext)` of every unit
+   - linking by each unit's `NXTCHNKHASH`
+   - starting from the unit where `NXTCHNKHASH` is all zeroes
+
+5. DECRYPT THE DATA
+
+   Used password `1VL7p6Rcli8mxgkh` (tyler row), then:
+   - `key = sha256(password)`
+   - for each ordered encrypted chunk:
+     - plaintext = AES-CTR decrypt(encrypted, key)
+     - key = sha256(plaintext)
+
+   This produced the recovered artifact blob.
+
+6. CARVE OUTPUT AND READ FLAG
+
+   From decrypted output, carved embedded files including:
+   - `jetpack_embedded.mp4`
+   - `jetpack_icon.png`
+
+   Opening `jetpack_icon.png` reveals the final flag:
+   - `BITSCTF{LF1_st4nds_4_1ost_fr0m_1ns1d3}`
+
+TOOLS USED:
+-----------
+- tshark / capinfos
+- Python (hashlib + AES-CTR decryption + parser scripts)
+- strings / binwalk
+- Manual inspection of carved files
+
+FLAG: BITSCTF{LF1_st4nds_4_1ost_fr0m_1ns1d3}

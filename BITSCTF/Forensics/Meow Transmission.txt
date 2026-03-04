@@ -1,0 +1,82 @@
+===============================================================================
+BITSCTF - Meow Transmission Writeup
+Category: Forensics
+Points: 498
+Author: yuthran
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+We intercepted a seemingly normal cat image with suspicious metadata and were
+told there was hidden information in it.
+
+FILES PROVIDED:
+--------------
+- transmission.png
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Checked the image metadata first:
+   - 128x128 grayscale PNG
+   - No obvious visible message
+   - tEXt comment mentions:
+     style [1, 2, 1]
+     spins [47, 37, 29]
+     rhythms [96, 64, 96]
+     sequence [1, 2, 3]
+     Russian mathematician hint (Arnold)
+
+   This strongly indicates an Arnold Cat Map based scrambling process.
+
+2. VALIDATE THE PNG STRUCTURE
+
+   Parsed PNG chunks and confirmed:
+   - IHDR
+   - 3 tEXt chunks (Comment/Author/Description)
+   - IDAT
+   - IEND
+
+   No hidden appended archive or alternate payload was present, so the secret
+   had to be encoded in pixel data.
+
+3. BITPLANE ANALYSIS
+
+   Split the image into bitplanes 0..7.
+   Key observation:
+   - bit0, bit1, and bit2 were identical sparse point patterns
+   - higher bitplanes looked like texture/noise patterns
+
+   So the intended payload was in the low-bit structure.
+
+4. REVERSE THE ARNOLD TRANSFORMS
+
+   Using N=128 and the metadata hints, reversed Arnold-style transforms for the
+   three leaps with the given spin counts and style order.
+
+   I tested coordinate/order variants and inverse conventions until a stable,
+   readable decode appeared. The best decode consistently produced a clear
+   3-line pixel text block in the top-left region.
+
+5. INTERPRET THE PIXEL TEXT
+
+   The decoded text used a tiny pixel font with ambiguous glyphs
+   (for example 5/s, 1/l, 0/o). Resolving those ambiguities with the required
+   flag format BITSCTF{...} gives:
+
+   arnold5_cat_maps_are_per10d1c
+
+6. FINAL FLAG
+
+   BITSCTF{4rn0ld5_c4t_m4ps_4r3_p3r10d1c}
+
+TOOLS USED:
+-----------
+- exiftool
+- strings / xxd / basic PNG chunk inspection
+- Python (Pillow + NumPy) for bitplane extraction and map reversal
+- Visual comparison grids for candidate decodes
+
+FLAG: BITSCTF{4rn0ld5_c4t_m4ps_4r3_p3r10d1c}

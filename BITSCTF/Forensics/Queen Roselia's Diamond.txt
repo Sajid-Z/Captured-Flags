@@ -1,0 +1,63 @@
+===============================================================================
+BITSCTF - Queen Roselia's Diamond Writeup
+Category: Forensics
+Points: 425
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+In 1687, Queen Roselia offered Dr. Oldenburg a residency in her queendom's most
+prestigious university on one condition: he continue his research on optics. He
+found a diamond that "decomposes" light into 7 colors: truly a breakthrough.
+She wore it proudly on her crown, the biggest stone among her crown jewels,
+where in the rays of the sun that shone through the palace windows, illuminated
+the court in a rainbow haze.
+
+FILES PROVIDED:
+---------------
+- queen_roselias_diamond.zip
+  - challenge_stego.tif
+
+SOLUTION:
+---------
+
+1. INITIAL TRIAGE
+
+   Extracted the zip and inspected the TIFF:
+   - Size: 635 x 635
+   - Sample format: 64-bit float grayscale
+   - No obvious metadata hints
+
+2. FIRST LAYER (DECOY QR)
+
+   Rounding float pixels to nearest integer produces a clean black/white image.
+   That image decodes as a QR and returns:
+   - BITSCTF{blud_REALLY_thought_lmao}
+
+   This looked intentional but was rejected by the platform (decoy flag).
+
+3. SECOND LAYER (RESIDUAL ANALYSIS)
+
+   Computed the residual image:
+   - residual = original_float - round(original_float)
+
+   Then normalized residual to visible range and exported `residual_norm.png`.
+   On close inspection (very faint text), the hidden flag appears in tiny font.
+
+4. REAL FLAG RECOVERY
+
+   The residual layer reveals:
+   - BITSCTF{qr_bu7_n07_7h47_qr}
+
+5. VALIDATION
+
+   Submitted the residual-derived flag and it is the accepted solve.
+
+TOOLS USED:
+-----------
+- unzip / file / exiftool
+- Python (tifffile, numpy, PIL/OpenCV)
+- QR decoder (for identifying decoy layer)
+- Manual visual inspection of `residual_norm.png`
+
+FLAG: BITSCTF{qr_bu7_n07_7h47_qr}
