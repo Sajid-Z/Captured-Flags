@@ -2,7 +2,6 @@
 EHAX CTF 2026 - Womp Womp Revenge Writeup
 Category: PWN
 Points: 500
-Author: abdullah790
 ===============================================================================
 
 CHALLENGE DESCRIPTION:
