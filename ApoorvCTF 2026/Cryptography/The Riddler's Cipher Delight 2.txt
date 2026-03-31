@@ -1,0 +1,151 @@
+===============================================================================
+ApoorvCTF 2026 - The Riddler's Cipher Delight 2 Writeup
+Category: Cryptography
+Points: 500
+Author: accord
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+The Riddler wasn't very delighted by the previous challenge. His encryption
+wasn't as clever as he thought! So, he concocted this new challenge for you.
+
+FILES PROVIDED:
+--------------
+- chall.py
+
+SOLUTION:
+---------
+
+1. BREAK THE PROVIDED RSA
+
+   The given `chall.py` chooses a 256-bit private exponent `d` and computes
+   `e = d^{-1} mod phi(N)`. For a 1024-bit modulus, that makes the system
+   Wiener's attack material.
+
+   Running a continued-fraction attack on the provided `(N, e)` recovers `d`
+   and decrypts the ciphertext to:
+
+   - `rentry.co/actf1`
+
+2. FOLLOW THE RENTRY CHAIN
+
+   `actf1` contains Brainfuck.
+
+   Executing it gives:
+
+   - `dGhpcyBpcyBhIGRlYWQgZW5kLi4gb3IgaXMgaXQgPw==`
+
+   Base64-decoding that gives:
+
+   - `this is a dead end.. or is it ?`
+
+   Enumerating nearby `actf*` pages reveals the real hint trail:
+
+   - `actf2` says to keep trying `actfXYZ`
+   - `actf6` hints at "the 8th circle of hell"
+   - `actf7`..`actf15` spell `MALBOLGE`
+   - `actf20` says to use the sign from `actf3` and trust no one else
+
+3. EXECUTE THE MALBOLGE PAGE
+
+   `actf3` is a valid Malbolge program.
+
+   Running it prints:
+
+   - `minisign -Vm <file> -P RWQ454fqCYMUjvs8f7Cen3i8dv3xwporJuYHAd+yLjyMAQO2HEcrj2zU`
+
+   This confirms the next public messages contain decoys, and the chain still
+   needs one more authenticated branch.
+
+4. DISCARD THE FALSE FLAG BRANCH
+
+   One visible branch leads through:
+
+   - `actual_msg` -> `rentry.co/areyoufinallyhere`
+
+   The final page there is another `e = 3` RSA instance. Its plaintext is:
+
+   - `apoorvctf{0x0xh3_who_sk1ps_n0+steps_l4ghs}`
+
+   Submitting that to the platform returns `Incorrect`, so this is a decoy.
+
+5. SOLVE THE ACCEPTED BRANCH
+
+   Another candidate branch comes from:
+
+   - `someunrealatedbsname`
+
+   That page is another small-exponent RSA instance. Since `e = 3` and the
+   ciphertext is an exact cube, taking the integer cube root gives:
+
+   - `https://rentry.co/lemonyrick67691`
+
+   `lemonyrick67691` contains this masked construction:
+
+   - `N' = N ^ k ^ c`
+   - `E' = 65537 ^ k ^ l`
+   - `C' = c ^ 65537 ^ l`
+
+   with `k` a 512-bit prime and `l` a 10-bit prime.
+
+   The key simplification is:
+
+   - `N = N' ^ E' ^ C'`
+
+   This recovers the same modulus as the original challenge. Using the
+   already-broken first RSA instance, factor that modulus once, then compute
+   `phi(N)`.
+
+   Now brute-force the 10-bit prime `l`. The correct one is the unique value
+   for which:
+
+   - `k = E' ^ 65537 ^ l`
+
+   is a 512-bit prime.
+
+   This yields:
+
+   - `l = 971`
+
+   Then:
+
+   - `c = C' ^ 65537 ^ l`
+
+   Decrypting with the recovered private key for `e = 65537` gives:
+
+   - `rentry.co/nakedcitrus21`
+
+6. FINISH THE LAST RSA
+
+   `nakedcitrus21` is another `e = 3` RSA page, but this time `m^3 > N`, so a
+   plain cube root does not work.
+
+   Use the standard low-exponent lift and search for a small `k` such that:
+
+   - `c + kN = m^3`
+
+   The correct value is:
+
+   - `k = 41`
+
+   Taking the exact cube root of `c + 41N` gives the accepted flag.
+
+7. VERIFY
+
+   Submitted the recovered flag to challenge id `22` on the live ApoorvCTF
+   instance using the credentials from `description.txt`.
+
+   The server response was:
+
+   - `Correct`
+
+TOOLS USED:
+-----------
+- Python
+- Continued fractions / Wiener's attack
+- Brainfuck interpreter
+- Malbolge interpreter
+- Basic brute force for 10-bit primes and `c + kN`
+
+FLAG: apoorvctf{_h3h3_ma0r_RSA_f4ilur33_modes_67}

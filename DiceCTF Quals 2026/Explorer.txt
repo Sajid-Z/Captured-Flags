@@ -1,0 +1,69 @@
+===============================================================================
+DiceCTF Quals 2026 - explorer Writeup
+Category: Reverse Engineering
+Points: 204
+Author: Abdullah790
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+"the future is now"
+Remote target boots a Linux VM and exposes serial over netcat.
+
+FILES PROVIDED:
+---------------
+- bzImage
+- initramfs.cpio.gz
+
+SOLUTION:
+---------
+
+1. INITIAL RECON
+
+   Extracted the archive and unpacked initramfs. `/init` creates `/dev/challenge`
+   and drops to user `ctf`, so the challenge logic is in the kernel image.
+
+2. KERNEL REVERSE
+
+   Extracted `vmlinux` from `bzImage` and disassembled around string xrefs:
+   - `drivers/misc/challenge.rs`
+   - ioctl dispatch function around `0xffffffff813bd835`
+
+   File operations are ioctl-centric; direct read/write on `/dev/challenge` return
+   `EINVAL` by design.
+
+3. INTERFACE MAPPING
+
+   Important ioctls recovered:
+   - `0x80046486` -> get move mask (6 directions)
+   - `0x40046488` -> move in direction `0..5`
+   - `0x80046485` -> state byte indicating special-node reached
+   - `0x80406487` -> return flag buffer if state byte == 1
+
+   The state machine is a randomized maze/graph. Moving updates internal node
+   pointer; reaching a node with marker `1` unlocks flag retrieval.
+
+4. LOCAL SOLVE
+
+   Wrote a small syscall-only static solver (`minsolve`) that:
+   - opens `/dev/challenge`
+   - DFS traverses via `GET_MASK + SET_DIR`
+   - checks unlock byte via `0x80046485`
+   - calls `0x80406487` and prints the flag when unlocked
+
+   Local output:
+   - `dice{fake_flag_for_testing}`
+
+5. REMOTE SOLVE
+
+   Connected to `explorer.chals.dicec.tf:1337`, uploaded `minsolve` over base64,
+   executed it, and captured remote flag.
+
+TOOLS USED:
+-----------
+- qemu-system-x86_64
+- objdump / strings / readelf
+- custom static C solver (`minsolve.c`)
+- pwntools upload-run script (`remote_solve.py`)
+
+FLAG: dice{twisty_rusty_kernel_maze}

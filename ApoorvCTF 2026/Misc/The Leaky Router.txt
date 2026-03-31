@@ -1,0 +1,75 @@
+===============================================================================
+ApoorvCTF 2026 - The Leaky Router Writeup
+Category: Miscellaneous
+Points: 500
+Author: orangcar
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+RTUN router over TCP (`chals3.apoorvctf.xyz:3001`) with incomplete protocol docs.
+Goal: reach Node 3 and retrieve the hidden data.
+
+FILES PROVIDED:
+--------------
+- rtun_protocol_reference.docx
+
+SOLUTION:
+---------
+
+1. RECONSTRUCT VALID PROTOCOL SURFACE
+
+   Built packets as:
+   - VERSION (1 byte)
+   - FLAGS (1 byte)
+   - TUNNEL_ID (4 bytes, big-endian)
+   - INNER_PROTO (1 byte)
+   - PAYLOAD_LEN (2 bytes, big-endian)
+   - PAYLOAD
+   - CRC32 (4 bytes, big-endian)
+
+   CRC = `zlib.crc32(all bytes except CRC)` and max payload is 511.
+
+2. ENUMERATE MISSING VALUES
+
+   Valid TUNNEL_IDs:
+   - 1, 2, 3
+
+   Valid INNER_PROTOs:
+   - 0x01: hello
+   - 0x02: STATUS command (exact payload `STATUS` with optional trailing whitespace/newline)
+   - 0x03: FLAG_REQ
+   - 0x04: ECHO
+
+3. OBSERVE AUTH BARRIERS
+
+   - Tunnel 2 returned `ERR_AUTH: session token mismatch`
+   - Tunnel 3 returned `ERR_AUTH: Node 3 only accepts packets from Node 2`
+   - Proto 3 on node 1 returned `FLAG_REQ acknowledged, but you are not Node2`
+
+4. FIND THE LOGIC BUG
+
+   The docs say reserved flag bits must be zero, but implementation is inconsistent.
+   Brute-testing all 256 flag bytes showed:
+
+   - For `(tunnel=2, proto=1, payload="")`, only `FLAGS=0xff` bypasses auth:
+     `RTUN/1.0 OK hello Node2, no message provided`
+
+   This means `FLAGS=0xff` breaks the intended auth/session checks.
+
+5. EXFILTRATE FLAG FROM NODE 3
+
+   Using the same bypass flag:
+   - `tunnel=3`
+   - `proto=3`
+   - `payload=GIVE_FLAG` (must be exact)
+
+   Response:
+   `RTUN/1.0 OK FLAG=apoorvctf{tun3l_v1s10n_byp4ss}`
+
+TOOLS USED:
+-----------
+- Python socket + struct + zlib
+- Local enumeration scripts
+
+FLAG: apoorvctf{tun3l_v1s10n_byp4ss}

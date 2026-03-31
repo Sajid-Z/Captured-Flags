@@ -1,0 +1,85 @@
+===============================================================================
+ApoorvCTF 2026 - Project Mirrorfall Writeup
+Category: AI
+Points: 500
+Author: bfrovrflw
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Signals intelligence disclosures from 2013 exposed a clandestine effort to
+defeat commercial encryption. You are an intelligence auditor verifying that
+leak through a frozen third-party mirror of the archive. Locate the relevant
+classification guide and recover an obscured ECI codeword.
+
+Three objectives produce Variable X and Variable Y which form the flag.
+
+FILES PROVIDED:
+--------------
+- qn.md (challenge instructions with three objectives)
+
+SOLUTION:
+---------
+
+1. OBJECTIVE 1: REPOSITORY FORENSICS
+
+   The "2013 intelligence disclosures" refers to the Snowden leaks.
+   The well-known GitHub mirror is: iamcryptoki/snowden-archive
+
+   Searched the repo tree via GitHub API for files dated 20130905 and
+   containing "bullrun":
+
+     documents/2013/20130905-theguardian__bullrun.pdf
+     documents/2013/20130905-theguardian__cryptanalysis_classification.pdf
+     documents/2013/20130905-theguardian__sigint_enabling.pdf
+
+   The "classification guide for the US encryption defeat program" is
+   20130905-theguardian__bullrun.pdf (titled "PROJECT BULLRUN/2-16
+   CLASSIFICATION GUIDE" inside the PDF).
+
+   Queried the commit history for this file via GitHub API:
+
+     curl "https://api.github.com/repos/iamcryptoki/snowden-archive/commits?path=documents/2013/20130905-theguardian__bullrun.pdf"
+
+   Latest (and only) commit SHA: 7d88323...
+
+   Variable X = 7d88323
+
+2. OBJECTIVE 2: ECI CODEWORD EXTRACTION
+
+   Downloaded the raw PDF and extracted text using PyMuPDF.
+   Page 2 contains the "Remarks" column listing ECI compartments:
+
+     APERIODIC, AMBULANT, AUNTIE, PAINTEDEAGLE, PAWLEYS, PITCHFORD,
+     PENDLETON, PICARESQUE, PIEDMONT
+
+   First ECI: APERIODIC
+   Second ECI: AMBULANT (8 letters)
+   Normalized (lowercase): ambulant
+
+3. OBJECTIVE 3: DETERMINISTIC EMBEDDING
+
+   Loaded the all-MiniLM-L6-v2 model from sentence-transformers:
+
+     from sentence_transformers import SentenceTransformer
+     model = SentenceTransformer('all-MiniLM-L6-v2')
+     embedding = model.encode('ambulant')
+     val = round(float(embedding[0]), 4)
+
+   Index 0 raw value: 0.02446683496236801
+   Rounded to 4 decimal places: 0.0245
+
+   Variable Y = 0.0245
+
+4. FLAG CONSTRUCTION
+
+   Flag = apoorvctf{X_Y} = apoorvctf{7d88323_0.0245}
+
+TOOLS USED:
+-----------
+- GitHub API (repo tree search, commit history)
+- PyMuPDF / fitz (PDF text extraction)
+- sentence-transformers (all-MiniLM-L6-v2 embedding model)
+- Python
+
+FLAG: apoorvctf{7d88323_0.0245}

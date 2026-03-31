@@ -1,0 +1,68 @@
+===============================================================================
+ApoorvCTF 2026 - A Golden Experience Writeup
+Category: Reverse Engineering
+Points: 480
+Author: shura356
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+You have won, the flag is printing and then you hear it, REQUIEM!!!!!!
+
+FILES PROVIDED:
+--------------
+- requiem
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+   
+   Ran the binary locally:
+   - "loading flag"
+   - "printing flag....."
+   - "RETURN TO ZERO!!!!!!!!"
+   
+   No visible flag output, so static reversing was required.
+
+2. TRIAGE THE BINARY
+   
+   Checked binary metadata:
+   - 64-bit ELF, PIE, stripped
+   - Rust-style runtime patterns
+   
+   Useful strings revealed only status text, not the flag.
+
+3. FIND THE CORE ROUTINE
+   
+   Disassembly near the runtime entry reached the challenge routine.
+   A loop processed exactly 0x2d bytes (45 bytes), reading from a
+   constant table in .rodata at offset 0x484f4.
+
+4. DECRYPTION LOGIC
+   
+   Each byte from the table is transformed using:
+   - decoded_byte = encoded_byte XOR 0x5a
+   
+   After this, the program zeroes the buffer ("RETURN TO ZERO" hint),
+   which explains why the flag is not shown directly.
+
+5. EXTRACT AND DECODE
+   
+   Dumped 45 bytes from offset 0x484f4 and applied XOR 0x5a to all bytes.
+   The decoded plaintext produced the full flag.
+
+6. VERIFY
+   
+   Submitted the recovered flag to challenge id 10 on the platform.
+   API response returned:
+   - status: correct
+   - message: Correct
+
+TOOLS USED:
+-----------
+- file / strings / objdump / readelf
+- Python (byte extraction + XOR decode)
+- curl/requests for platform submission
+
+FLAG: apoorvctf{N0_M0R3_R3QU13M_1N_TH15_3XP3R13NC3}

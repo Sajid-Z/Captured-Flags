@@ -1,0 +1,69 @@
+===============================================================================
+ApoorvCTF 2026 - The Engraver's fault Writeup
+Category: Forensics
+Points: 500
+Author: nnnnn
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Large image gallery. Hint text points to unique physical/sensor "fault" as a
+covert channel, not visible scene content.
+
+FILES PROVIDED:
+--------------
+- chal1.zip (gallery with 455 JPEG images)
+  - 352 files named 1.jpg ... 352.jpg
+  - 103 files named IMG_20260302_*.jpg.jpeg
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Extracted the zip and checked metadata/stego basics:
+   - All files are JPEG, same resolution (4096x3072)
+   - EXIF/comment fields stripped
+   - No appended payload after EOI
+   - Uniform JPEG quantization tables
+
+   So the channel is not classic metadata/LSB payload.
+
+2. CAMERA FINGERPRINT APPROACH (PRNU)
+
+   The challenge text strongly suggests sensor-pattern fingerprinting.
+   Used a PRNU pipeline to:
+   - Compute residual noise for each image
+   - Build a reference fingerprint from the IMG_* set
+   - Score each numbered image against that reference
+
+3. TURN SCORES INTO A BITSTREAM
+
+   Sorted numbered files by numeric index (1..352).
+   Converted each score to a bit by thresholding near zero (small positive
+   cutoff around 0.0048 worked best):
+   - score >= threshold -> 1
+   - score <  threshold -> 0
+
+   This produced 352 bits = 44 bytes.
+
+4. DECODE
+
+   Reading bytes in order (MSB-first) yielded an almost-clean plaintext flag
+   pattern, with only tiny noise-induced ambiguities in a few characters.
+   Applying the expected flag format and leetspeak wording resolves it to:
+
+   apoorvctf{1d3nt1ty_cr1515_f0r_1m4g35_h4h4h4}
+
+5. VERIFY
+
+   Submitted to challenge ID 14 via CTFd API:
+   - Response: {\"status\": \"correct\", \"message\": \"Correct\"}
+
+TOOLS USED:
+-----------
+- Python
+- PRNU extraction/correlation workflow
+- CTFd API submission script (requests)
+
+FLAG: apoorvctf{1d3nt1ty_cr1515_f0r_1m4g35_h4h4h4}

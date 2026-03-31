@@ -1,0 +1,72 @@
+===============================================================================
+ApoorvCTF 2026 - Tick Tock Writeup
+Category: Cryptography
+Points: 500
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Our engineers are obsessed with performance.Their main goal? Speed.
+
+To keep things fast, the password verification service avoids doing more work
+than necessary. Every millisecond counts.
+
+Correct password gives the flag.
+Password is digits only (0-9).
+
+Endpoint: nc chals3.apoorvctf.xyz 9001
+
+FILES PROVIDED:
+--------------
+- Remote service only (no local attachment)
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Connected with netcat and checked interaction:
+   - Service asks: "Please enter the password:"
+   - Wrong input returns: "Incorrect password."
+   - It then asks again.
+
+2. IDENTIFY THE SIDE CHANNEL
+
+   Measured response time for one-digit guesses.
+   One digit had a much longer response than the others, indicating a
+   character-by-character password check with early exit.
+
+3. TIMING ATTACK STRATEGY
+
+   Used a Python socket script to:
+   - Send guess prefixes
+   - Measure time from send() to response
+   - Select the digit with the largest median time
+   - Repeat for the next position
+
+   This recovers the password left to right due to per-character delay.
+
+4. RECOVER PASSWORD
+
+   Extracted password by iterative timing:
+   934780189098
+
+5. VERIFY REMOTELY
+
+   Sent recovered password to service and received:
+   - Correct! apoorvctf{con5t4nt_tim3_or_di3}
+
+6. SUBMIT ON PLATFORM
+
+   Logged in to CTFd using provided credentials and submitted challenge id 20.
+   API result:
+   - status: correct
+   - message: Correct
+
+TOOLS USED:
+-----------
+- nc
+- Python (socket + timing script)
+- requests (CTFd login + submission)
+
+FLAG: apoorvctf{con5t4nt_tim3_or_di3}

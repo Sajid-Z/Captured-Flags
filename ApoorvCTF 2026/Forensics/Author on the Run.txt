@@ -1,0 +1,149 @@
+===============================================================================
+ApoorvCTF 2026 - Author on the Run Writeup
+Category: Forensics
+Points: 500
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+An author was recording themselves typing keystrokes. They first recorded all
+26 lowercase letters (a-z) 50 times each for a total of 1300 keypresses in
+Reference.wav, then recorded themselves typing the flag into CTFd in flag.wav.
+Recover the flag from the audio.
+
+Flag Format: apoorvctf{flag}
+
+FILES PROVIDED:
+--------------
+- Reference.wav  (26 MB, ~305 seconds — 1300 labeled keypresses, a-z x50 each)
+- flag.wav       (1.1 MB, ~12 seconds — someone typing the flag)
+
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Loaded both files at SR=44100 Hz (mono). Reference.wav contained 1300
+   keypresses in strict alphabetical order: 50 presses of 'a', then 50 of 'b',
+   etc. flag.wav had a short burst of keypresses to decode.
+
+   Quick sanity check: 26 keys × 50 presses = 1300 expected onsets.
+
+
+2. ONSET DETECTION
+
+   librosa's built-in onset_detect failed completely — it merged or split
+   clusters incorrectly. A custom energy-based detector was implemented:
+
+   - Split audio into 5ms chunks and compute RMS energy per chunk
+   - Smooth with uniform_filter1d to reduce transient spikes
+   - Threshold = mean + 2.0 × std of the smoothed energy curve
+   - Detect rising edges; enforce minimum 120ms gap between onsets
+
+   This found exactly 1303 onsets in Reference.wav (target: 1300).
+   The 3 extra onsets were absorbed by taking the first 1300.
+   On flag.wav it found 21 onsets, not 19 or 20 as initially expected.
+
+
+3. FEATURE EXTRACTION AND CLASSIFIER TRAINING
+
+   For each onset, a window of 80ms starting at the onset was extracted.
+   Features: 20 MFCCs + delta + delta-delta = 120-dimensional vector
+             (mean and std over time frames → 6 × 20 = 120 dims)
+
+   Ground-truth labels for Reference.wav: onset i maps to letter
+       KEY_ORDER[i * 26 // 1300]
+   where KEY_ORDER = list('qwertyuiopasdfghjklzxcvbnm').
+
+   Three classifiers trained:
+   - k-Nearest Neighbors (k=7, distance-weighted)
+   - SVM (RBF kernel, C=10)
+   - Random Forest (300 estimators)
+   All features StandardScaler-normalized.
+
+
+4. FIRST PASS DECODING
+
+   All three models unanimously agreed on the first 13 characters:
+       POSITIONS 1-13: o h y o u g o t t h i s f
+
+   Positions 14-21 showed conflicts. Key observation: onsets at positions 15
+   and 19 were only ~140ms after positions 14 and 18 respectively, while all
+   other inter-keypress gaps were 400-900ms. Something unusual was happening.
+
+
+5. THE KEY-RELEASE ECHO PROBLEM
+
+   Detailed per-onset interval analysis revealed that every keypress in
+   flag.wav actually produces TWO rising edges in the energy signal:
+
+   - Press event:    the keypress — primary onset
+   - Release event:  the key release ~66-78ms later — normally filtered out
+                     by the 100ms minimum gap, but...
+
+   Positions 14 and 18 had their secondary event (key release) arriving at
+   exactly ~138ms — just above the 100ms threshold. So the energy detector
+   mistakenly captured these release events as separate keypresses, giving
+   21 onsets instead of the true 19 real keypresses.
+
+   CONCLUSION: Positions 15 and 19 in the 21-onset list are key-release echoes
+   of positions 14 and 18. The real flag is 19 characters long.
+
+
+6. SPECTRAL ANALYSIS TO DISAMBIGUATE
+
+   With echoes removed, the flag structure was:
+       ohyougotthisf [X] rd [Y] mn
+   where X = onset index 13, Y = onset index 17 (release echoes discarded).
+
+   Positions 16-17 (r,d) and 20-21 (m,n) were confirmed by all models.
+   X and Y remained uncertain.
+
+   Spectral template matching was applied:
+   - For each reference key, compute the mean magnitude spectrum (Hanning
+     windowed FFT, L1-normalized) over all 50 training presses
+   - Compute cosine similarity between each flag onset's spectrum and every
+     key template
+
+   Result:
+   - X = 'a' (cosine similarity 0.8734 — closest template)
+   - Y = 'a' (cosine similarity 0.8751 — closest template)
+
+   MFCC-based kNN found X = 'g', Y = 'w' at low confidence (~0.55), but
+   spectral matching outperformed kNN on these acoustically unusual presses
+   because the high-frequency impact content was the discriminating feature.
+
+
+7. FLAG RECOVERY
+
+   Substituting X=Y='a' into the 19-character decoded string:
+
+       ohyougotthisf + a + rd + a + mn  =  ohyougotthisfardamn
+
+   Reading it aloud: "oh you got this far, damn!"  — the author's cheeky
+   challenge completion message.
+
+   Final flag: apoorvctf{ohyougotthisfardamn}
+
+
+TOOLS USED:
+-----------
+- Python 3 with librosa, numpy, scipy, scikit-learn
+- Custom energy-based onset detector (5ms RMS chunks, uniform smoothing)
+- MFCC feature extraction (20 coefficients + delta + delta-delta)
+- kNN / SVM / Random Forest ensemble
+- Spectral cosine template matching (Hanning FFT, L1-normalized)
+
+
+KEY INSIGHT:
+------------
+The two "extra" onsets (positions 15 and 19) were key-release echoes, not
+additional keypresses. Once removed, the remaining 19 onsets decoded cleanly
+with high confidence on 17 of 19 characters. The final 2 uncertain characters
+were resolved by spectral template matching (cosine similarity on magnitude
+spectra), which gave 'a' for both — resulting in the readable phrase
+"oh you got this far, damn!"
+
+
+FLAG: apoorvctf{ohyougotthisfardamn}

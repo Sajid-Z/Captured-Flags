@@ -1,0 +1,75 @@
+===============================================================================
+ApoorvCTF 2026 - Draw Me Writeup
+Category: Reverse Engineering
+Points: 500
+Author: makeki
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+“Draw me, just draw me”. A GLSL shader VM and an input image are given.
+The renderer appears black at first, but hidden output is produced by the VM.
+
+FILES PROVIDED:
+---------------
+- challenge.glsl
+- program.png
+- runner.html
+
+SOLUTION:
+---------
+
+1. UNDERSTAND THE EXECUTION MODEL
+
+   The fragment shader implements a tiny VM over a 256x256 RGBA state texture.
+   Important regions:
+   - (0,0): instruction pointer (IP)
+   - row y=0, x=1..32: registers
+   - y=1..127: program/instruction memory
+   - y=128..255: VRAM/output plane
+
+   Each frame executes 16 VM instructions and writes back state.
+
+2. REVERSE THE OPCODES
+
+   From challenge.glsl / runner.html, opcodes are:
+   - 0: NOP
+   - 1: MOVI reg, imm
+   - 2: ADD
+   - 3: SUB
+   - 4: XOR
+   - 5: JMP
+   - 6: JNZ
+   - 7: DRAW pixel into VRAM (y offset +128)
+   - 8: STORE 4 bytes to state
+   - 9: LOAD from state into register
+
+   The program is self-modifying: opcode 8 patches future instruction bytes.
+
+3. EMULATE THE VM OFFLINE
+
+   Reimplemented the VM logic in Python and executed until steady behavior.
+   Emulation reveals the shader eventually writes a compact 3x5 dot-matrix text
+   in the VRAM region.
+
+4. EXTRACT THE DOT-MATRIX TEXT
+
+   The meaningful output appears around y=130..134.
+   Rendering this region at high scale makes the message readable.
+
+5. READ THE FINAL FLAG TEXT
+
+   The decoded text gives the final flag directly as:
+   APOORVCTF{GL5L_15_7UR1NG_C0MPL373}
+
+6. VERIFY
+
+   Submitting the recovered flag to challenge id 27 marks the challenge solved.
+
+TOOLS USED:
+-----------
+- GLSL source inspection (challenge.glsl, runner.html)
+- Python VM emulator
+- Image processing / nearest-neighbor upscale for dot-matrix readability
+
+FLAG: APOORVCTF{GL5L_15_7UR1NG_C0MPL373}

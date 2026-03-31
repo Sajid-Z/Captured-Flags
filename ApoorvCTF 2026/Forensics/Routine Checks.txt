@@ -1,0 +1,80 @@
+===============================================================================
+ApoorvCTF 2026 - Routine Checks Writeup
+Category: Forensics
+Points: 500
+Author: Gopi
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Routine system checks were performed on the city's communication network after
+reports of instability. Operators sent brief messages between nodes to confirm
+everything was running smoothly. Most of the exchanges are ordinary status
+updates, but one message stands out as... different.
+
+FILES PROVIDED:
+--------------
+- challenge.pcap
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Opened the PCAP in tshark and surveyed the traffic.
+   All connections are loopback (127.0.0.1 → 127.0.0.1) to ports 5000–5011+.
+   Decoded the TCP payloads from hex and noticed they are plaintext status
+   messages such as:
+     - "System health check OK."
+     - "Server response looks strange."
+     - "Backup completed successfully."
+     - "Network latency seems stable."
+
+   One connection (port 5001) sends a 5688-byte payload — significantly
+   larger than all others (~24–31 bytes). This is clearly the suspicious one.
+
+2. EXTRACT THE BINARY PAYLOAD
+
+   Filtered tshark for port 5001 TCP payloads and extracted raw bytes using
+   Python/scapy.
+
+   The payload starts with: 3f d8 ff e0 00 10 4a 46 49 46 ...
+   It ends with:            ... ff d9
+
+   JPEG magic bytes are ff d8 ff e0, and ff d9 is the JPEG end-of-image (EOI)
+   marker. The only anomaly is the first byte 0x3f (instead of 0xff).
+
+3. FIX THE BROKEN JPEG
+
+   Replaced the first byte 0x3f with 0xff to restore the proper JPEG header.
+   Running `file` confirmed: JPEG image data, JFIF 1.01, 99x99px, grayscale.
+
+4. DISCOVER STEGANOGRAPHY
+
+   Ran steghide on the recovered image:
+     steghide info extracted_fixed.jpg -p ""
+
+   Output revealed an embedded file named "realflag.txt":
+     - Size: 42 bytes
+     - Encryption: rijndael-128, cbc
+     - The empty password ("") unlocked the archive.
+
+5. EXTRACT THE FLAG
+
+   steghide extract -sf extracted_fixed.jpg -p ""
+
+   This wrote realflag.txt to disk containing the flag.
+
+6. VERIFY & SUBMIT
+
+   Submitted the flag via the CTFd API and received:
+     { "status": "correct", "message": "Correct" }
+
+TOOLS USED:
+-----------
+- tshark (packet analysis & payload extraction)
+- Python / scapy (binary extraction & JPEG repair)
+- file, exiftool (file type identification)
+- steghide (steganography detection and extraction)
+
+FLAG: apoorvctf{b1ts_wh1sp3r_1n_th3_l0w3st_b1t}

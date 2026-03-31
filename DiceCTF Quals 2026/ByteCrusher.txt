@@ -1,0 +1,89 @@
+===============================================================================
+DiceCTF Quals 2026 - bytecrusher Writeup
+Category: Binary Exploitation
+Points: 500
+Author: NomanProdhan
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Dice's new proprietary text crusher is here! Try it out for free with our
+sixteen free trials of the premium service.
+
+FILES PROVIDED:
+---------------
+- bytecrusher
+- bytecrusher.c
+- Dockerfile
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Checked source and binary protections:
+   - PIE, NX, Canary, Full RELRO enabled
+   - `gets()` in `get_feedback()` is overflowable, but needs canary + PIE leak
+
+2. FIND THE REAL BUG IN `crush_string`
+
+   `crush_string(input, output, rate, output_max_len)` uses:
+   - `for (i += rate)` to index `input[i]`
+   - `out_idx < output_max_len - 1` as copy bound
+
+   Bugs:
+   - `rate` has no upper bound, so `input[i]` becomes out-of-bounds read.
+   - `output_len` only checks upper bound (`> 32`) and allows tiny values.
+
+3. TURN IT INTO A BYTE LEAK PRIMITIVE
+
+   In each free trial:
+   - Set `input = "A"`
+   - Set `rate = target_offset`
+   - Set `output_len = 3`
+
+   Effect:
+   - 1st copied byte is always `input[0]` = `'A'`
+   - 2nd copied byte is `input[target_offset]` from stack
+   - If leaked byte is `0x00`, output is only `A`
+
+   So each trial leaks one chosen stack byte.
+
+4. LEAK CANARY + PIE IN 16 TRIALS
+
+   Stack layout in `free_trial`:
+   - `input_buf` starts at `[rbp-0x50]`
+   - canary is at `[rbp-0x8]` => offsets `72..79`
+   - saved RIP is at `[rbp+0x8]` => offsets `88..95`
+
+   Used all 16 trials to leak:
+   - 8 bytes canary (`72..79`)
+   - 8 bytes return address (`88..95`)
+
+   PIE base:
+   - leaked return points to `main+0x15ec` (after `call free_trial`)
+   - `pie_base = leaked_ret - 0x15ec`
+
+5. OVERFLOW `get_feedback` AND JUMP TO ADMIN
+
+   `get_feedback` has `char buf[16]` but frame reserves 0x20 bytes before canary.
+   Overflow payload:
+   - 24 bytes padding
+   - leaked canary
+   - 8 bytes fake saved rbp
+   - return address = `admin_portal` (PIE adjusted)
+
+   `admin_portal()` prints the flag file.
+
+6. REMOTE RELIABILITY DETAIL
+
+   Remote service closes quickly with many round-trips, so all 16 trial inputs
+   were sent in one burst, then parsed from one response blob before sending the
+   final overflow.
+
+TOOLS USED:
+-----------
+- checksec / objdump
+- pwntools
+
+FLAG: dice{pwn3d_4nd_coRuSh3d}

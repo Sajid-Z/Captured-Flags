@@ -1,0 +1,105 @@
+===============================================================================
+DiceCTF Quals 2026 - interpreter-required Writeup
+Category: Reverse Engineering
+Points: 153
+Author: maxster
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+I found this riddle in some ancient language, but I'm not sure what it means...
+(don't interpret the puzzle, it will OOM your computer)
+
+FILES PROVIDED:
+--------------
+- interpreter (ELF 64-bit, statically linked, stripped)
+- flag_riddle.txt (73KB of mixed English/Chinese text)
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Running `./interpreter flag_riddle.txt` begins printing
+   "=== INTERPRETE..." but gets killed (OOM). The challenge hint
+   warns against direct interpretation. The riddle contains ~22,565
+   CJK characters embedded in English commentary.
+
+2. REVERSE ENGINEER THE INTERPRETER
+
+   Using radare2 to analyze the binary revealed a lambda calculus
+   interpreter. The parser dispatch (at 0x40225c) recognizes three
+   CJK keywords:
+     - 以 (U+4EE5): lambda abstraction (parameters until 而, then body)
+     - 为 (U+4E3A): application chain (expressions until 矣, 于 for nesting)
+     - All other CJK: variable references
+   All non-CJK characters (ASCII, punctuation, newlines) are silently
+   skipped by the tokenizer. The main function looks up 旗 (flag),
+   evaluates it as a Church-encoded list, and prints each element as
+   a character.
+
+3. UNDERSTAND THE LANGUAGE
+
+   The top-level structure is: NAME BODY pairs, where NAME is one CJK
+   character and BODY is a lambda calculus expression. Key definitions:
+
+     真 = λa.λb. a            (Church true)
+     假 = λa.λb. b            (Church false)
+     正 = λx. x               (identity)
+     無 = λx. id              (Church 0)
+     甲/乙/丙/丁              (Church 1/2/3/4)
+     生 = Church successor
+     双 = Church pair
+     本/末 = fst/snd
+     有/无 = Some/None (option type)
+     朝...暮 = binary number literal (春=0, 秋=1, LSB first)
+
+4. IDENTIFY ARITHMETIC OPERATIONS
+
+   The program defines arithmetic on Church numerals:
+     合(a, b) = a + b         (addition via iterated successor)
+     销(a, b) = a - b         (subtraction via iterated predecessor)
+     幂(a, b) = a ^ b         (exponentiation via Church encoding)
+     阶(n) = n!               (factorial via Y-combinator style recursion)
+     分(a, b) = a / b         (integer division)
+
+   Using these directly with Church numerals causes exponential
+   blowup (the OOM warning). The key insight is to evaluate them
+   as Python integer operations instead.
+
+5. WRITE A PYTHON EVALUATOR
+
+   Built a parser for the CJK token stream that produces an AST,
+   then pattern-matched each definition:
+     - Binary literals (朝...暮) → decoded LSB-first to integers
+     - 阶(n) → math.factorial(n)
+     - 合(a)(b) → a + b
+     - 销(a)(b) → a - b
+     - 幂(a)(b) → a ** b
+     - 分(a)(b) → a // b
+   The program defines 2741 variables. The last one, 旗 (flag),
+   is a linked list of 136 computed character values.
+
+6. EXTRACT THE FLAG
+
+   Evaluating all 136 values produces the output:
+
+     === INTERPRETER REQUIRED ===
+     Calculating flag...
+
+     Thanks for playing!
+
+     旗子：
+     dice{y0u_int3rpret3d_Th3_CJK_gr4mMaR_succ3ssfully}
+     这是λ之道也！
+
+7. VERIFY
+
+   The flag format matches dice{...} as expected.
+
+TOOLS USED:
+-----------
+- radare2 (binary analysis of the interpreter)
+- Python 3 (custom parser and arithmetic evaluator)
+
+FLAG: dice{y0u_int3rpret3d_Th3_CJK_gr4mMaR_succ3ssfully}

@@ -1,0 +1,122 @@
+===============================================================================
+ApoorvCTF 2026 - Riddler's Respite Writeup
+Category: Miscellaneous
+Points: 500
+Author: accord
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+After being foiled twice and having his crypto puzzles decrypted, the Riddler
+felt defeated and decided to switch to algorithms and mathematics.
+
+Service:
+- nc chals1.apoorvctf.xyz 13001
+
+FILES PROVIDED:
+---------------
+- No downloadable files (remote service only)
+
+SOLUTION:
+---------
+
+1. PROTOCOL RECON (IMPORTANT)
+
+   The service has a hidden first input stage (password prompt appears only
+   after first line is sent), then accepts riddle choice.
+
+   The challenge is multi-stage:
+   - Stage 1 token unlocks Stage 2
+   - Stage 2 token unlocks Stage 3
+   - Stage 3 returns final flag for CTFd submission
+
+   Wrong choices often print decoy token:
+   - `apoorvctf{L4vd3n4_Bh0jYUM}`
+
+2. STAGE 1 (ARRAY RIDDLE)
+
+   Menu choice: `1`
+
+   Per testcase input format:
+   - `N a1 a2 ... aN`
+
+   Required outputs:
+   - [0, 20, 69, 12345, 720764]
+
+   Derived logic:
+   - If no `0` exists -> output `0`
+   - If `0` exists and `1` does not -> output `XOR(all elements)`
+   - If both `0` and `1` exist -> output `XOR(all elements) * MEX(array)`
+   - Any element > 100000 triggers decoy behavior
+
+   Working payload (`cnt = 5`):
+   - `1 0`
+   - `3 20 0 0`
+   - `3 69 0 0`
+   - `3 12345 0 0`
+   - `13 0 1 2 3 4 5 6 7 8 9 10 100000 96607`
+
+   Stage 1 token:
+   - `apoorvctf{m3xtim3sx0r}`
+
+3. STAGE 2 (TREE / GRAPH THEORY RIDDLE)
+
+   Use Stage 1 token as first input.
+   Menu choice: `2`
+
+   Per testcase format:
+   - `N u1 v1 u2 v2 ... u(N-1) v(N-1)` (tree edges)
+
+   Required outputs:
+   - [4, 32, 49, 140, 470]
+
+   Derived function:
+   - Wiener index of tree (sum of shortest-path distances over all unordered
+     node pairs)
+
+   Working payload (`cnt = 5`):
+   - `3 1 2 2 3`                                         -> 4
+   - `6 4 1 5 1 1 2 2 3 3 6`                             -> 32
+   - `8 2 1 3 1 4 1 5 1 6 1 7 1 1 8`                     -> 49
+   - `11 1 4 2 4 5 3 3 6 6 8 7 8 9 4 4 8 10 8 8 11`     -> 140
+   - `15 1 12 4 10 6 12 10 3 3 8 8 7 7 5 5 11 11 2 12 9 9 13 14 2 2 13 13 15` -> 470
+
+   Stage 2 token:
+   - `apoorvctf{sUm0fp4th3}`
+
+4. STAGE 3 (PERMUTATION RIDDLE)
+
+   Use Stage 2 token as first input.
+   Menu choice: `3`
+
+   Per testcase format:
+   - `N p1 p2 ... pN` (a permutation of 1..N)
+
+   Required outputs:
+   - [3, 8, 15, 19, 67]
+
+   Derived function:
+   - Order of permutation (LCM of cycle lengths)
+
+   Working payload (`cnt = 5`):
+   - `3 2 3 1`                                           -> 3
+   - `8 2 3 4 5 6 7 8 1`                                 -> 8
+   - `15 2 3 4 5 6 7 8 9 10 11 12 13 14 15 1`            -> 15
+   - `19 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 1`-> 19
+   - `67 2 3 4 ... 67 1`                                 -> 67 (single 67-cycle)
+
+   Service final flag:
+   - `apoorvctf{___CTF_m4r3_l3k3__CPF_000p3_ouwuo_}`
+
+TOOLS USED:
+-----------
+- Python sockets (protocol probing + automation)
+- Netcat for manual interaction
+
+FINAL SUBMISSION:
+-----------------
+- Challenge id: 31
+- Submitted flag:
+  `apoorvctf{___CTF_m4r3_l3k3__CPF_000p3_ouwuo_}`
+- CTFd response:
+  `Correct`

@@ -1,0 +1,121 @@
+===============================================================================
+ApoorvCTF 2026 - Forge's .......well forge Writeup
+Category: Reverse Engineering
+Points: 363
+Author: shura356
+===============================================================================
+
+CHALLENGE DESCRIPTION:
+----------------------
+Forge has made it so that only his trinket can open his workshop(forge) or so
+it would seem.
+
+FILES PROVIDED:
+--------------
+- forge  (ELF 64-bit LSB pie executable, x86-64, stripped)
+
+SOLUTION:
+---------
+
+1. INITIAL RECONNAISSANCE
+
+   Running `file` and `strings` gives the first clues:
+   - ELF 64-bit PIE stripped binary (no symbols, harder to analyse)
+   - Strings reveal OpenSSL function names: EVP_EncryptInit_ex, EVP_aes_256_gcm,
+     SHA256, RAND_bytes
+   - Also visible: mmap, prctl, seccomp references --> heavy anti-analysis
+
+   The challenge title hints that a "trinket" (a special input file) is needed.
+
+2. ANTI-DEBUG ANALYSIS
+
+   Running `strace ./forge` immediately shows:
+       ptrace(PTRACE_TRACEME) = -1 EPERM
+   followed by exit_group(1).
+
+   The binary uses three classical anti-debug tricks:
+   a) ptrace(PTRACE_TRACEME) self-tracing - exits if already being traced
+   b) MAP_FIXED mmap at 0x20000000 (exec page) and 0x40000000 (shared memory)
+      - checks mmap return values; exits if they fail
+   c) fork() + seccomp sandbox in the child process
+
+3. BYPASS ANTI-DEBUG (BINARY PATCHING)
+
+   Locate the three conditional jumps in the binary and NOP them out:
+   - File offset 0x121a: je after ptrace check  --> 6x NOP
+   - File offset 0x1271: je after mmap1 check   --> 6x NOP
+   - File offset 0x12a0: je after mmap2 check   --> 6x NOP
+
+   Quick Python patcher:
+       with open('forge','rb') as f: data = bytearray(f.read())
+       for off in [0x121a, 0x1271, 0x12a0]:
+           data[off:off+6] = b'\x90\x90\x90\x90\x90\x90'
+       with open('forge_patched','wb') as f: f.write(data)
+
+4. DISCOVERING THE REQUIRED INPUT FILE
+
+   Running the patched binary (or strace on it) reveals:
+       open("payload>bin", O_RDONLY) = -1 ENOENT
+   The binary reads a file literally named `payload>bin` (the "trinket").
+   Create a dummy placeholder file:
+       touch 'payload>bin'
+   The binary now proceeds past the file-read stage.
+
+5. UNDERSTANDING THE FULL ALGORITHM
+
+   With ASLR disabled and GDB attached to the patched binary, tracing
+   the main() flow reveals:
+
+   a) Read `payload>bin` contents into executable mmap at 0x20000000
+   b) RAND_bytes generates 56 random bytes (var_d70h) and IVs
+   c) SHA256(var_d70h) --> 32-byte digest stored at var_cd0h
+   d) A custom 56-byte cipher algorithm runs on binary data using the
+      signal mask as a fixed key, producing the flag plaintext at var_d30h
+   e) AES-256-GCM encrypts var_d30h --> ciphertext at shared[0x10]
+   f) AES-256-GCM encrypts var_d70h --> ciphertext at shared[0xac]
+   g) fork(): child executes shellcode from 0x20000000 under seccomp sandbox
+   h) Parent waitpid(), SHA256-checks shared[0x1bc], writes shared[0x13c]
+      to stdout
+
+   KEY INSIGHT: var_d30h is the FLAG PLAINTEXT computed BEFORE AES encryption.
+   It is deterministic (the signal mask is fixed). We can read it directly
+   in GDB before the AES call.
+
+6. EXTRACT THE FLAG WITH GDB
+
+   Load the patched binary in GDB with ASLR disabled:
+       $ gdb ./forge_patched
+       (gdb) set disable-randomization on
+       (gdb) set follow-fork-mode parent
+
+   Identify the AES encryption call address. In the disassembly:
+       0x1689: lea rdi, [rsp+0xd30]   <-- rdi = pointer to flag plaintext
+       0x1691: call fcn_aes_gcm_encrypt
+   With base 0x555555554000, the breakpoint address is 0x555555555691.
+
+       (gdb) b *0x555555555691
+       (gdb) run
+       (gdb) x/56bx $rdi
+
+   Memory dump at $rdi yields the raw flag bytes:
+   41 50 4f 4f 52 56 43 54 46 7b 59 30 75 5f 34 63
+   74 75 61 6c 6c 79 5f 62 72 4f 75 67 68 74 5f 59
+   30 75 72 5f 6f 77 4e 5f 46 69 72 6d 77 34 72 65
+   3f 3f 3f 3f 21 21 21 7d
+
+7. VERIFY
+
+   Decoding the bytes:
+       APOORVCTF{Y0u_4ctually_brOught_Y0ur_owN_Firmw4re????!!!}
+
+   The flag is exactly 56 bytes -- matching RAND_bytes sizes and cipher
+   block size used throughout the binary.
+
+TOOLS USED:
+-----------
+- file, strings, strace    (initial recon)
+- Python                   (binary patching)
+- GDB                      (dynamic analysis, flag extraction)
+- radare2 / disassembly    (static analysis of algorithm)
+
+FLAG: APOORVCTF{Y0u_4ctually_brOught_Y0ur_owN_Firmw4re????!!!}
